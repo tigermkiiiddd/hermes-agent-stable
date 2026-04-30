@@ -9474,6 +9474,23 @@ class HermesCLI:
                     event.app.invalidate()
                 return
 
+            # --- Normal input: Enter inserts a newline ---
+            event.current_buffer.insert_text('\n')
+        
+        @kb.add('escape', 'enter')
+        def handle_alt_enter(event):
+            """Alt+Enter inserts a newline for multi-line input."""
+            event.current_buffer.insert_text('\n')
+
+        @kb.add('c-j')
+        def handle_ctrl_enter(event):
+            """Ctrl+Enter submits the current input.
+
+            Routes normal input to the correct queue based on state:
+            - Agent running: goes to _interrupt_queue (chat() monitors this)
+            - Agent idle: goes to _pending_input (process_loop monitors this)
+            Commands (starting with /) always go to _pending_input.
+            """
             # --- Normal input routing ---
             text = event.app.current_buffer.text.strip()
             has_images = bool(self._attached_images)
@@ -9564,16 +9581,6 @@ class HermesCLI:
                 else:
                     self._pending_input.put(payload)
                 event.app.current_buffer.reset(append_to_history=True)
-        
-        @kb.add('escape', 'enter')
-        def handle_alt_enter(event):
-            """Alt+Enter inserts a newline for multi-line input."""
-            event.current_buffer.insert_text('\n')
-
-        @kb.add('c-j')
-        def handle_ctrl_enter(event):
-            """Ctrl+Enter (c-j) inserts a newline. Most terminals send c-j for Ctrl+Enter."""
-            event.current_buffer.insert_text('\n')
 
         # VSCode/Cursor bind Ctrl+G to "Find Next" at the editor level, so
         # the keystroke never reaches the embedded terminal. Alt+G is unbound
