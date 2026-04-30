@@ -9727,21 +9727,63 @@ class HermesCLI:
 
         # --- History navigation: up/down browse history in normal input mode ---
         # The TextArea is multiline, so by default up/down only move the cursor.
-        # Buffer.auto_up/auto_down handle both: cursor movement when multi-line,
-        # history browsing when on the first/last line (or single-line input).
+        # Buffer.auto_up/auto_down only track logical lines (\n), not visual
+        # wrap lines.  We compute the visual row ourselves so that up/down move
+        # across wrapped lines first, and only jump history at the visual edge.
         _normal_input = Condition(
             lambda: not self._clarify_state and not self._approval_state and not self._sudo_state and not self._secret_state and not self._model_picker_state
         )
 
+        def _visual_cursor_row(buf):
+            """Return (visual_row, total_visual_rows) for the cursor position."""
+            from prompt_toolkit.utils import get_cwidth as _gcw
+            try:
+                from prompt_toolkit.application import get_app
+                _pw = max(2, _gcw(self._get_tui_prompt_text()))
+                try:
+                    _aw = get_app().output.get_size().columns - _pw
+                except Exception:
+                    _aw = shutil.get_terminal_size((80, 24)).columns - _pw
+                if _aw < 10:
+                    _aw = 40
+            except Exception:
+                _aw = 60
+            doc = buf.document
+            cursor_logical_row = doc.cursor_position_row
+            cursor_col = doc.cursor_position_col
+            visual_row = 0
+            for i, line in enumerate(doc.lines):
+                lw = _gcw(line)
+                wrap_count = max(1, -(-lw // _aw)) if lw > 0 else 1
+                if i < cursor_logical_row:
+                    visual_row += wrap_count
+                elif i == cursor_logical_row:
+                    visual_row += min(cursor_col // max(_aw, 1), wrap_count - 1)
+            total = 0
+            for line in doc.lines:
+                lw = _gcw(line)
+                total += max(1, -(-lw // _aw)) if lw > 0 else 1
+            return visual_row, total
+
         @kb.add('up', filter=_normal_input)
         def history_up(event):
-            """Up arrow: browse history when on first line, else move cursor up."""
-            event.app.current_buffer.auto_up(count=event.arg)
+            """Up arrow: move across visual wrap lines first, then history."""
+            buf = event.app.current_buffer
+            vrow, _ = _visual_cursor_row(buf)
+            if vrow > 0:
+                buf.cursor_up(count=event.arg)
+            else:
+                buf.history_backward(count=event.arg)
 
         @kb.add('down', filter=_normal_input)
         def history_down(event):
-            """Down arrow: browse history when on last line, else move cursor down."""
-            event.app.current_buffer.auto_down(count=event.arg)
+            """Down arrow: move across visual wrap lines first, then history."""
+            buf = event.app.current_buffer
+            vrow, vtotal = _visual_cursor_row(buf)
+            if vrow < vtotal - 1:
+                buf.cursor_down(count=event.arg)
+            else:
+                buf.history_forward(count=event.arg)
 
         @kb.add('c-l')
         def handle_ctrl_l(event):
