@@ -125,11 +125,11 @@ class TestCmdUpdateBranchFallback:
 
         commands = [" ".join(str(a) for a in c.args[0]) for c in mock_run.call_args_list]
 
-        # rev-list should use origin/main, not origin/fix/stoicneko
+        # rev-list should use upstream/main, not any feature branch.
         rev_list_cmds = [c for c in commands if "rev-list" in c]
         assert len(rev_list_cmds) == 1
-        assert "origin/main" in rev_list_cmds[0]
-        assert "origin/fix/stoicneko" not in rev_list_cmds[0]
+        assert "upstream/main" in rev_list_cmds[0]
+        assert "upstream/fix/stoicneko" not in rev_list_cmds[0]
 
         # pull should use main, not fix/stoicneko
         pull_cmds = [c for c in commands if "pull" in c]
@@ -151,7 +151,7 @@ class TestCmdUpdateBranchFallback:
 
         rev_list_cmds = [c for c in commands if "rev-list" in c]
         assert len(rev_list_cmds) == 1
-        assert "origin/main" in rev_list_cmds[0]
+        assert "upstream/main" in rev_list_cmds[0]
 
         pull_cmds = [c for c in commands if "pull" in c]
         assert len(pull_cmds) == 1

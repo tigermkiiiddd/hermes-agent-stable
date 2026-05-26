@@ -233,7 +233,6 @@ function UseAsMenu({
   mainAuxTask: string | null;
   onAssigned(): void;
 }) {
-  const { t } = useI18n();
   const ui = useDashboardUi();
   const localizedAuxTasks = useLocalizedAuxTasks();
   const [open, setOpen] = useState(false);
@@ -578,6 +577,7 @@ function AuxiliaryTasksModal({
   onSaved(): void;
   onClose(): void;
 }) {
+  const { t } = useI18n();
   const ui = useDashboardUi();
   const localizedAuxTasks = useLocalizedAuxTasks();
   const [picker, setPicker] = useState<PickerTarget | null>(null);
