@@ -1869,69 +1869,262 @@ class TestPluginDebugLogging:
             plugins_mod.logger.handlers = original_handlers
 
 
-class TestPluginContextProfileName:
-    """ctx.profile_name resolves from HERMES_HOME in every context."""
-
-    def _ctx(self):
-        mgr = PluginManager()
-        manifest = PluginManifest(name="test-plugin", source="user")
-        return PluginContext(manifest, mgr)
-
-    def test_default_profile(self, tmp_path, monkeypatch):
-        """HERMES_HOME at the root resolves to 'default'."""
-        home = tmp_path / ".hermes"
-        home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setenv("HERMES_HOME", str(home))
-        assert self._ctx().profile_name == "default"
-
-    def test_named_profile(self, tmp_path, monkeypatch):
-        """HERMES_HOME under profiles/<name> resolves to that name."""
-        prof = tmp_path / ".hermes" / "profiles" / "coder"
-        prof.mkdir(parents=True)
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setenv("HERMES_HOME", str(prof))
-        assert self._ctx().profile_name == "coder"
-
-    def test_works_without_cli_ref(self, tmp_path, monkeypatch):
-        """profile_name does not depend on _cli_ref (None in worker sessions)."""
-        prof = tmp_path / ".hermes" / "profiles" / "worker1"
-        prof.mkdir(parents=True)
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setenv("HERMES_HOME", str(prof))
-        ctx = self._ctx()
-        assert ctx._manager._cli_ref is None
-        assert ctx.profile_name == "worker1"
+# ── TestPluginMCPServers ───────────────────────────────────────────────────
 
 
-class TestDispatchToolWithoutCliRef:
-    """ctx.dispatch_tool works in worker/hook contexts (no _cli_ref).
+class TestPluginMCPServers:
+    """Tests for plugin-declared MCP server auto-start/stop lifecycle."""
 
-    This pins the contract the plugin docs rely on: a plugin can drive
-    tools from a hook callback even when running in the gateway or a
-    kanban-spawned worker session, where _cli_ref is None.
-    """
-
-    def test_dispatch_tool_invokes_handler_without_cli_ref(self):
-        from tools.registry import registry
-
-        mgr = PluginManager()
-        assert mgr._cli_ref is None  # worker/hook context
-        ctx = PluginContext(PluginManifest(name="test-plugin", source="user"), mgr)
-
-        calls = []
-        registry.register(
-            name="_test_dispatch_probe",
-            toolset="debugging",
-            schema={"name": "_test_dispatch_probe", "description": "probe",
-                    "parameters": {"type": "object", "properties": {}}},
-            handler=lambda args, **kw: calls.append((args, kw)) or '{"ok": true}',
+    def test_manifest_parses_mcp_servers(self, tmp_path, monkeypatch):
+        """plugin.yaml with mcp_servers is parsed into PluginManifest."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        plugin_dir = plugins_dir / "mcp_plugin"
+        plugin_dir.mkdir(parents=True)
+        manifest = {
+            "name": "mcp_plugin",
+            "version": "1.0.0",
+            "mcp_servers": {
+                "srv1": {
+                    "command": "python",
+                    "args": ["server.py"],
+                    "timeout": 60,
+                }
+            },
+        }
+        (plugin_dir / "plugin.yaml").write_text(yaml.dump(manifest))
+        (plugin_dir / "__init__.py").write_text("def register(ctx): pass\n")
+        hermes_home = tmp_path / "hermes_test"
+        (hermes_home / "config.yaml").write_text(
+            yaml.safe_dump({"plugins": {"enabled": ["mcp_plugin"]}})
         )
-        try:
-            result = ctx.dispatch_tool("_test_dispatch_probe", {"x": 1})
-            assert result == '{"ok": true}'
-            assert calls and calls[0][0] == {"x": 1}
-            # parent_agent is not forced when there's no CLI agent to resolve.
-            assert calls[0][1].get("parent_agent") is None
-        finally:
-            registry.deregister("_test_dispatch_probe")
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        loaded = mgr._plugins.get("mcp_plugin")
+        assert loaded is not None
+        assert "srv1" in loaded.manifest.mcp_servers
+        assert loaded.manifest.mcp_servers["srv1"]["command"] == "python"
+
+    def test_load_plugin_registers_mcp_servers(self, tmp_path, monkeypatch):
+        """_load_plugin calls mcp_tool.register_mcp_servers with prefixed names."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        plugin_dir = plugins_dir / "mcp_plugin"
+        plugin_dir.mkdir(parents=True)
+        manifest = {
+            "name": "mcp_plugin",
+            "version": "1.0.0",
+            "mcp_servers": {
+                "srv1": {"command": "python", "args": ["server.py"]},
+            },
+        }
+        (plugin_dir / "plugin.yaml").write_text(yaml.dump(manifest))
+        (plugin_dir / "__init__.py").write_text("def register(ctx): pass\n")
+        hermes_home = tmp_path / "hermes_test"
+        (hermes_home / "config.yaml").write_text(
+            yaml.safe_dump({"plugins": {"enabled": ["mcp_plugin"]}})
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        captured = {}
+
+        def fake_register_mcp_servers(servers):
+            captured["servers"] = servers
+            return []
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+
+        assert "mcp_plugin/srv1" in captured["servers"]
+        assert captured["servers"]["mcp_plugin/srv1"]["command"] == "python"
+
+    def test_load_plugin_resolves_relative_command_path(self, tmp_path, monkeypatch):
+        """Relative command paths are resolved against the plugin directory."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        plugin_dir = plugins_dir / "mcp_plugin"
+        plugin_dir.mkdir(parents=True)
+        # Create a fake executable in the plugin dir
+        (plugin_dir / "my_server.py").write_text("# server\n")
+        manifest = {
+            "name": "mcp_plugin",
+            "version": "1.0.0",
+            "mcp_servers": {
+                "srv1": {"command": "my_server.py", "args": []},
+            },
+        }
+        (plugin_dir / "plugin.yaml").write_text(yaml.dump(manifest))
+        (plugin_dir / "__init__.py").write_text("def register(ctx): pass\n")
+        hermes_home = tmp_path / "hermes_test"
+        (hermes_home / "config.yaml").write_text(
+            yaml.safe_dump({"plugins": {"enabled": ["mcp_plugin"]}})
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        captured = {}
+
+        def fake_register_mcp_servers(servers):
+            captured["servers"] = servers
+            return []
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+
+        resolved_cmd = captured["servers"]["mcp_plugin/srv1"]["command"]
+        assert Path(resolved_cmd).exists()
+        assert Path(resolved_cmd).name == "my_server.py"
+
+    def test_load_plugin_resolves_relative_args(self, tmp_path, monkeypatch):
+        """Relative args that exist as files are resolved against plugin dir."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        plugin_dir = plugins_dir / "mcp_plugin"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "server.py").write_text("# server\n")
+        manifest = {
+            "name": "mcp_plugin",
+            "version": "1.0.0",
+            "mcp_servers": {
+                "srv1": {"command": "python", "args": ["server.py"]},
+            },
+        }
+        (plugin_dir / "plugin.yaml").write_text(yaml.dump(manifest))
+        (plugin_dir / "__init__.py").write_text("def register(ctx): pass\n")
+        hermes_home = tmp_path / "hermes_test"
+        (hermes_home / "config.yaml").write_text(
+            yaml.safe_dump({"plugins": {"enabled": ["mcp_plugin"]}})
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        captured = {}
+
+        def fake_register_mcp_servers(servers):
+            captured["servers"] = servers
+            return []
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+
+        resolved_args = captured["servers"]["mcp_plugin/srv1"]["args"]
+        assert Path(resolved_args[0]).exists()
+        assert Path(resolved_args[0]).name == "server.py"
+
+    def test_unload_plugin_stops_mcp_servers(self, tmp_path, monkeypatch):
+        """unload_plugin calls stop_servers_by_prefix for the plugin's servers."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        _make_plugin_dir(
+            plugins_dir,
+            "mcp_plugin",
+            manifest_extra={
+                "mcp_servers": {
+                    "srv1": {"command": "python", "args": ["server.py"]},
+                }
+            },
+        )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        captured = {}
+
+        def fake_register_mcp_servers(servers):
+            captured["registered"] = list(servers.keys())
+            return []
+
+        def fake_stop_servers_by_prefix(prefix):
+            captured["stopped_prefix"] = prefix
+            return []
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers), \
+             patch("tools.mcp_tool.stop_servers_by_prefix", fake_stop_servers_by_prefix):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+            assert "mcp_plugin" in mgr._plugins
+            mgr.unload_plugin("mcp_plugin")
+
+        assert captured.get("stopped_prefix") == "mcp_plugin/"
+
+    def test_mcp_servers_registered_populated(self, tmp_path, monkeypatch):
+        """LoadedPlugin.mcp_servers_registered tracks prefixed server names."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        _make_plugin_dir(
+            plugins_dir,
+            "mcp_plugin",
+            manifest_extra={
+                "mcp_servers": {
+                    "srv1": {"command": "python"},
+                    "srv2": {"command": "node"},
+                }
+            },
+        )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        with patch("tools.mcp_tool.register_mcp_servers", return_value=[]):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+
+        loaded = mgr._plugins["mcp_plugin"]
+        assert loaded.mcp_servers_registered == ["mcp_plugin/srv1", "mcp_plugin/srv2"]
+
+    def test_plugin_mcp_servers_tracked(self, tmp_path, monkeypatch):
+        """PluginManager._plugin_mcp_servers maps plugin key -> server names."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        _make_plugin_dir(
+            plugins_dir,
+            "mcp_plugin",
+            manifest_extra={
+                "mcp_servers": {"srv1": {"command": "python"}}
+            },
+        )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        with patch("tools.mcp_tool.register_mcp_servers", return_value=[]):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+
+        assert mgr._plugin_mcp_servers.get("mcp_plugin") == ["mcp_plugin/srv1"]
+
+    def test_mcp_registration_failure_records_error(self, tmp_path, monkeypatch, caplog):
+        """If register_mcp_servers raises, the plugin is still loaded but error is recorded."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        _make_plugin_dir(
+            plugins_dir,
+            "mcp_plugin",
+            manifest_extra={
+                "mcp_servers": {"srv1": {"command": "python"}}
+            },
+        )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        def fake_register_mcp_servers(_servers):
+            raise RuntimeError("MCP boom")
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers):
+            with caplog.at_level(logging.WARNING, logger="hermes_cli.plugins"):
+                mgr = PluginManager()
+                mgr.discover_and_load()
+
+        loaded = mgr._plugins["mcp_plugin"]
+        assert loaded.enabled  # register() succeeded
+        assert loaded.mcp_servers_registered == []  # no servers started
+        assert any("Failed to start MCP servers" in r.message for r in caplog.records)
+
+    def test_no_mcp_servers_means_no_registration_attempt(self, tmp_path, monkeypatch):
+        """Plugins without mcp_servers should not trigger MCP registration."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        _make_plugin_dir(plugins_dir, "plain_plugin")
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        captured = False
+
+        def fake_register_mcp_servers(_servers):
+            nonlocal captured
+            captured = True
+            return []
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers):
+            mgr = PluginManager()
+            mgr.discover_and_load()
+
+        assert not captured
+        assert mgr._plugins["plain_plugin"].mcp_servers_registered == []

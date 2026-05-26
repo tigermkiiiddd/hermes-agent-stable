@@ -4136,3 +4136,114 @@ class TestMcpParallelToolCalls:
             register_mcp_servers(config_off)
         with _lock:
             assert sanitize_mcp_name_component("toggle_srv") not in _parallel_safe_servers
+
+
+# ---------------------------------------------------------------------------
+# Dynamic server registration (plugin-declared MCP servers)
+# ---------------------------------------------------------------------------
+
+class TestDynamicServerRegistration:
+    """Tests for register_dynamic_server, unregister_server, stop_servers_by_prefix."""
+
+    def test_register_dynamic_server_delegates_to_register_mcp_servers(self):
+        """register_dynamic_server is a thin wrapper around register_mcp_servers."""
+        from tools.mcp_tool import register_dynamic_server
+
+        captured = {}
+
+        def fake_register_mcp_servers(servers):
+            captured["servers"] = servers
+            return ["mcp_test_tool"]
+
+        with patch("tools.mcp_tool.register_mcp_servers", fake_register_mcp_servers):
+            result = register_dynamic_server("my-plugin/srv", {"command": "python"})
+
+        assert captured["servers"] == {"my-plugin/srv": {"command": "python"}}
+        assert result == ["mcp_test_tool"]
+
+    def test_unregister_server_removes_and_shuts_down(self):
+        """unregister_server stops the server, removes it from _servers, and deregisters tools."""
+        from tools.mcp_tool import unregister_server, _servers, MCPServerTask
+        from tools.registry import ToolRegistry
+
+        mock_registry = ToolRegistry()
+        mock_registry.register(
+            name="mcp_test_srv_hello",
+            toolset="mcp-test-srv",
+            schema={"name": "mcp_test_srv_hello", "description": "Hello"},
+            handler=lambda *_a, **_k: "{}",
+        )
+
+        server = MCPServerTask("test_srv")
+        server._registered_tool_names = ["mcp_test_srv_hello"]
+        server.session = MagicMock()
+        server._shutdown_event = MagicMock()
+
+        with patch("tools.registry.registry", mock_registry):
+            with patch.object(MCPServerTask, "shutdown", new_callable=AsyncMock) as mock_shutdown:
+                _servers["test_srv"] = server
+                try:
+                    result = unregister_server("test_srv")
+                    assert result is True
+                    assert "test_srv" not in _servers
+                    assert "mcp_test_srv_hello" not in mock_registry.get_all_tool_names()
+                    mock_shutdown.assert_awaited_once()
+                finally:
+                    _servers.pop("test_srv", None)
+
+    def test_unregister_server_returns_false_for_missing(self):
+        """unregister_server returns False when the server name doesn't exist."""
+        from tools.mcp_tool import unregister_server, _servers
+
+        _servers.pop("nonexistent", None)
+        assert unregister_server("nonexistent") is False
+
+    def test_stop_servers_by_prefix_removes_matching(self):
+        """stop_servers_by_prefix unregisters all servers whose names start with prefix."""
+        from tools.mcp_tool import stop_servers_by_prefix, _servers, MCPServerTask
+
+        srv_a = MCPServerTask("plugin-a/srv1")
+        srv_a._registered_tool_names = []
+        srv_b = MCPServerTask("plugin-a/srv2")
+        srv_b._registered_tool_names = []
+        srv_c = MCPServerTask("plugin-b/srv1")
+        srv_c._registered_tool_names = []
+
+        _servers["plugin-a/srv1"] = srv_a
+        _servers["plugin-a/srv2"] = srv_b
+        _servers["plugin-b/srv1"] = srv_c
+
+        try:
+            with patch.object(MCPServerTask, "shutdown", new_callable=AsyncMock):
+                removed = stop_servers_by_prefix("plugin-a/")
+                assert sorted(removed) == ["plugin-a/srv1", "plugin-a/srv2"]
+                assert "plugin-a/srv1" not in _servers
+                assert "plugin-a/srv2" not in _servers
+                assert "plugin-b/srv1" in _servers
+        finally:
+            for name in list(_servers.keys()):
+                _servers.pop(name, None)
+
+    def test_stop_servers_by_prefix_returns_empty_when_no_match(self):
+        """stop_servers_by_prefix returns [] when nothing matches."""
+        from tools.mcp_tool import stop_servers_by_prefix, _servers
+
+        # Ensure no servers match
+        for name in list(_servers.keys()):
+            if name.startswith("zzz/"):
+                _servers.pop(name, None)
+
+        removed = stop_servers_by_prefix("zzz/")
+        assert removed == []
+
+    def test_register_mcp_servers_skips_disabled(self):
+        """Servers with enabled: false are not added to _servers."""
+        from tools.mcp_tool import register_mcp_servers, _servers
+
+        with patch("tools.mcp_tool._MCP_AVAILABLE", True), \
+             patch("tools.mcp_tool._ensure_mcp_loop"), \
+             patch("tools.mcp_tool._run_on_mcp_loop"), \
+             patch("tools.mcp_tool._existing_tool_names", return_value=[]):
+            register_mcp_servers({"skip_me": {"command": "python", "enabled": False}})
+
+        assert "skip_me" not in _servers

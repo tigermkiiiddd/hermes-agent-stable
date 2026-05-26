@@ -268,6 +268,8 @@ class PluginManifest:
     requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
     provides_tools: List[str] = field(default_factory=list)
     provides_hooks: List[str] = field(default_factory=list)
+    # MCP servers declared by this plugin (loaded automatically on plugin load).
+    mcp_servers: Dict[str, dict] = field(default_factory=dict)
     source: str = ""        # "user", "project", or "entrypoint"
     path: Optional[str] = None
     # Plugin kind — see plugins.py module docstring for semantics.
@@ -304,6 +306,7 @@ class LoadedPlugin:
     hooks_registered: List[str] = field(default_factory=list)
     middleware_registered: List[str] = field(default_factory=list)
     commands_registered: List[str] = field(default_factory=list)
+    mcp_servers_registered: List[str] = field(default_factory=list)
     enabled: bool = False
     error: Optional[str] = None
 
@@ -1090,10 +1093,8 @@ class PluginContext:
         """Register a read-only skill provided by this plugin.
 
         The skill becomes resolvable as ``'<plugin_name>:<name>'`` via
-        ``skill_view()``.  It does **not** enter the flat
-        ``~/.hermes/skills/`` tree and is **not** listed in the system
-        prompt's ``<available_skills>`` index — plugin skills are
-        opt-in explicit loads only.
+        ``skill_view()`` and appears in ``skills_list()`` alongside local
+        skills.
 
         Raises:
             ValueError: if *name* contains ``':'`` or invalid characters.
@@ -1150,13 +1151,8 @@ class PluginManager:
         # Plugin-registered auxiliary tasks: key → {key, display_name,
         # description, defaults, plugin}. See PluginContext.register_auxiliary_task.
         self._aux_tasks: Dict[str, Dict[str, Any]] = {}
-        # Slack Block Kit action handlers registered by plugins. Each entry
-        # is (matcher, callback, plugin_name); the Slack adapter wires them
-        # into its slack_bolt App at connect() time. ``matcher`` is whatever
-        # ``app.action()`` accepts (a literal action_id string, a compiled
-        # ``re.Pattern``, or a constraint dict); ``callback`` is an async
-        # function with the slack_bolt signature ``(ack, body, action)``.
-        self._slack_action_handlers: List[tuple] = []
+        # plugin key → list of MCP server names spawned by this plugin.
+        self._plugin_mcp_servers: Dict[str, List[str]] = {}
 
     # -----------------------------------------------------------------------
     # Public
@@ -1180,6 +1176,9 @@ class PluginManager:
             self._discovered = True
             return
         if force:
+            # Gracefully unload existing plugins (stops MCP servers, deregisters tools/hooks).
+            for key in list(self._plugins):
+                self.unload_plugin(key)
             self._plugins.clear()
             self._hooks.clear()
             self._middleware.clear()
@@ -1191,12 +1190,7 @@ class PluginManager:
             self._aux_tasks.clear()
             self._slack_action_handlers.clear()
             self._context_engine = None
-        # Set the flag up front as a re-entrancy guard (a plugin's register()
-        # can transitively trigger discovery again), but reset it if the sweep
-        # raises so a failed scan is NOT cached as "discovered with an empty
-        # registry" — callers swallow the exception and would otherwise be
-        # permanently stranded on the early-return above (the "No web provider
-        # configured" class of failures).
+            self._plugin_mcp_servers.clear()
         self._discovered = True
         try:
             self._discover_and_load_inner()
@@ -1519,6 +1513,7 @@ class PluginManager:
                 requires_env=data.get("requires_env", []),
                 provides_tools=data.get("provides_tools", []),
                 provides_hooks=data.get("provides_hooks", []),
+                mcp_servers=data.get("mcp_servers", {}),
                 source=source,
                 path=str(plugin_dir),
                 kind=kind,
@@ -1640,7 +1635,115 @@ class PluginManager:
                 manifest.name, exc, exc_info=_PLUGINS_DEBUG,
             )
 
+        # Start MCP servers declared by this plugin (even if register() failed,
+        # external services can still function independently).
+        if manifest.mcp_servers:
+            try:
+                from tools import mcp_tool
+
+                plugin_key = manifest.key or manifest.name
+                plugin_dir = Path(manifest.path) if manifest.path else Path.cwd()
+                prefixed_servers: Dict[str, dict] = {}
+                for name, cfg in manifest.mcp_servers.items():
+                    resolved_cfg = dict(cfg)
+                    # Resolve relative command paths against plugin directory
+                    cmd = resolved_cfg.get("command", "")
+                    if cmd and not os.path.isabs(cmd):
+                        abs_cmd = plugin_dir / cmd
+                        if abs_cmd.exists():
+                            resolved_cfg["command"] = str(abs_cmd)
+                    # Resolve relative args that look like file paths
+                    args = list(resolved_cfg.get("args", []))
+                    for i, arg in enumerate(args):
+                        if isinstance(arg, str) and not os.path.isabs(arg):
+                            abs_arg = plugin_dir / arg
+                            if abs_arg.exists():
+                                args[i] = str(abs_arg)
+                    resolved_cfg["args"] = args
+                    prefixed_servers[f"{plugin_key}/{name}"] = resolved_cfg
+                mcp_tool.register_mcp_servers(prefixed_servers)
+                loaded.mcp_servers_registered = list(prefixed_servers.keys())
+                self._plugin_mcp_servers[plugin_key] = loaded.mcp_servers_registered
+                loaded.enabled = True
+                logger.debug(
+                    "Plugin '%s' started %d MCP server(s): %s",
+                    plugin_key,
+                    len(loaded.mcp_servers_registered),
+                    ", ".join(loaded.mcp_servers_registered),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to start MCP servers for plugin '%s': %s",
+                    manifest.name, exc, exc_info=_PLUGINS_DEBUG,
+                )
+
         self._plugins[manifest.key or manifest.name] = loaded
+
+    def unload_plugin(self, plugin_key: str) -> None:
+        """Unload a single plugin: stop its MCP servers, deregister tools/hooks/commands."""
+        loaded = self._plugins.get(plugin_key)
+        if loaded is None:
+            return
+
+        # 1. Stop MCP servers owned by this plugin
+        server_names = self._plugin_mcp_servers.pop(plugin_key, [])
+        if server_names:
+            try:
+                from tools import mcp_tool
+
+                stopped = mcp_tool.stop_servers_by_prefix(f"{plugin_key}/")
+                logger.debug(
+                    "Plugin '%s': stopped %d MCP server(s): %s",
+                    plugin_key, len(stopped), ", ".join(stopped),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Error stopping MCP servers for plugin '%s': %s",
+                    plugin_key, exc,
+                )
+
+        # 2. Deregister tools
+        for tool_name in loaded.tools_registered:
+            try:
+                from tools.registry import registry
+                registry.deregister(tool_name)
+                self._plugin_tool_names.discard(tool_name)
+            except Exception:
+                pass
+
+        # 3. Deregister hooks
+        for hook_name in loaded.hooks_registered:
+            cbs = self._hooks.get(hook_name, [])
+            # Remove callbacks that belong to this plugin's module
+            module_obj = loaded.module
+            self._hooks[hook_name] = [
+                cb for cb in cbs
+                if getattr(cb, "__module__", None) != getattr(module_obj, "__name__", None)
+            ]
+
+        # 4. Deregister slash commands
+        for cmd_name in list(self._plugin_commands):
+            if self._plugin_commands[cmd_name].get("plugin") == loaded.manifest.name:
+                self._plugin_commands.pop(cmd_name, None)
+
+        # 5. Deregister CLI commands
+        for cmd_name in list(self._cli_commands):
+            if self._cli_commands[cmd_name].get("plugin") == loaded.manifest.name:
+                self._cli_commands.pop(cmd_name, None)
+
+        # 6. Deregister skills
+        for qualified in list(self._plugin_skills):
+            if self._plugin_skills[qualified].get("plugin") == loaded.manifest.name:
+                self._plugin_skills.pop(qualified, None)
+
+        # 7. Deregister auxiliary tasks
+        for key in list(self._aux_tasks):
+            if self._aux_tasks[key].get("plugin") == loaded.manifest.name:
+                self._aux_tasks.pop(key, None)
+
+        # 8. Remove from registry
+        self._plugins.pop(plugin_key, None)
+        logger.info("Plugin '%s' unloaded", plugin_key)
 
     def _load_directory_module(self, manifest: PluginManifest) -> types.ModuleType:
         """Import a directory-based plugin as ``hermes_plugins.<slug>``.
@@ -1807,6 +1910,7 @@ class PluginManager:
                     "hooks": len(loaded.hooks_registered),
                     "middleware": len(loaded.middleware_registered),
                     "commands": len(loaded.commands_registered),
+                    "mcp_servers": len(loaded.mcp_servers_registered),
                     "error": loaded.error,
                 }
             )

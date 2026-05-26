@@ -711,8 +711,42 @@ def skills_list(category: str = None, task_id: str = None) -> str:
                 ensure_ascii=False,
             )
 
-        # Find all skills
+        # Find all skills (filesystem + plugin-registered)
         all_skills = _find_all_skills()
+
+        # Append plugin-registered skills
+        try:
+            from hermes_cli.plugins import get_plugin_manager
+
+            pm = get_plugin_manager()
+            for qualified_name, entry in getattr(pm, "_plugin_skills", {}).items():
+                if any(s.get("name") == qualified_name for s in all_skills):
+                    continue
+                skill_path = entry.get("path")
+                if not skill_path or not skill_path.exists():
+                    continue
+                try:
+                    content = skill_path.read_text(encoding="utf-8")[:4000]
+                    frontmatter, _body = _parse_frontmatter(content)
+                    description = frontmatter.get("description", entry.get("description", ""))
+                    if not description:
+                        for line in _body.strip().split("\n"):
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                description = line
+                                break
+                    if len(description) > MAX_DESCRIPTION_LENGTH:
+                        description = description[:MAX_DESCRIPTION_LENGTH - 3] + "..."
+                    category = frontmatter.get("category", "plugin")
+                    all_skills.append({
+                        "name": qualified_name,
+                        "description": description,
+                        "category": category,
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
         if not all_skills:
             return json.dumps(

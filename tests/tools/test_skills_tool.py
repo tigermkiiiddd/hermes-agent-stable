@@ -1370,3 +1370,59 @@ class TestSkillViewCollisionDetection:
         result = json.loads(raw)
         assert result["success"] is True
         assert "LOCAL BODY" in result["content"]
+
+
+class TestSkillsListPluginSkills:
+    @pytest.fixture(autouse=True)
+    def _isolate(self, tmp_path, monkeypatch):
+        from hermes_cli import plugins as plugins_mod
+        from hermes_cli.plugins import PluginManager
+
+        self.pm = PluginManager()
+        monkeypatch.setattr(plugins_mod, "_plugin_manager", self.pm)
+        empty = tmp_path / "empty-skills"
+        empty.mkdir()
+        monkeypatch.setattr("tools.skills_tool.SKILLS_DIR", empty)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
+
+    def test_skills_list_includes_plugin_skills(self, tmp_path):
+        from tools.skills_tool import skills_list
+
+        skill_dir = tmp_path / "plugins" / "myplugin" / "skills" / "demo"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        md = skill_dir / "SKILL.md"
+        md.write_text("---\nname: demo\ndescription: Demo skill\n---\nDemo body.\n")
+        self.pm._plugin_skills["myplugin:demo"] = {
+            "path": md,
+            "plugin": "myplugin",
+            "bare_name": "demo",
+            "description": "Demo skill",
+        }
+
+        result = json.loads(skills_list())
+        assert result["success"] is True
+        skill_names = {s["name"] for s in result["skills"]}
+        assert "myplugin:demo" in skill_names
+
+    def test_skills_list_skips_missing_plugin_skill_files(self, tmp_path):
+        from tools.skills_tool import skills_list
+
+        self.pm._plugin_skills["myplugin:missing"] = {
+            "path": tmp_path / "nonexistent.md",
+            "plugin": "myplugin",
+            "bare_name": "missing",
+            "description": "Missing skill",
+        }
+
+        result = json.loads(skills_list())
+        assert result["success"] is True
+        skill_names = {s["name"] for s in result["skills"]}
+        assert "myplugin:missing" not in skill_names
+
+    def test_frontmatter_parses_bootstrap_field(self):
+        from tools.skills_tool import _parse_frontmatter
+
+        content = "---\nname: boot\ndescription: Boot skill\nbootstrap: true\n---\nBody\n"
+        fm, body = _parse_frontmatter(content)
+        assert fm["bootstrap"] is True
+        assert "Body" in body
