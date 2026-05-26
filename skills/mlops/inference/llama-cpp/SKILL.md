@@ -1,6 +1,6 @@
 ---
 name: llama-cpp
-description: llama.cpp local GGUF inference + HF Hub model discovery.
+description: "llama.cpp 本地 GGUF 推理 + HF Hub 模型发现"
 version: 2.1.2
 author: Orchestra Research
 license: MIT

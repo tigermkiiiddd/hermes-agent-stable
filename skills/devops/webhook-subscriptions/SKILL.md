@@ -1,6 +1,6 @@
 ---
 name: webhook-subscriptions
-description: "Webhook subscriptions: event-driven agent runs."
+description: "Webhook 订阅：事件驱动的 Agent 运行"
 version: 1.1.0
 platforms: [linux, macos, windows]
 metadata:
