@@ -479,7 +479,7 @@ export const zh: Translations = {
 
   achievements: {
     hero: {
-      kicker: "Agentic Gamerscore",
+      kicker: "代理成就积分",
       title: "Hermes Achievements",
       subtitle:
         "从真实会话历史中获得的 Hermes 可收集徽章。已知尚未达成的成就显示为「已发现」；秘密成就在首次出现匹配行为之前保持隐藏。",
@@ -497,7 +497,7 @@ export const zh: Translations = {
       secrets: "秘密",
       secrets_hint: "在首次信号出现前保持隐藏",
       highest_tier: "最高等级",
-      highest_tier_hint: "Copper → Silver → Gold → Diamond → Olympian",
+      highest_tier_hint: "青铜 → 白银 → 黄金 → 钻石 → 奥林匹斯",
       latest: "最新",
       latest_hint_empty: "多多运行 Hermes",
       none_yet: "暂无",
@@ -580,7 +580,7 @@ export const zh: Translations = {
         "「在 X 上分享」会在新标签页中打开预填好的帖子。如果想附上 1200×630 的徽章，请先点击「复制图片」—— X 允许你直接粘贴到推文编辑器中。「下载 PNG」会将文件保存下来，可在任意位置使用。",
       clipboard_unsupported:
         "此浏览器不支持复制剪贴板图片 —— 请改用「下载」。",
-      tweet_text: "Just unlocked {tier_part}\"{name}\" in Hermes Agent ☤",
+      tweet_text: "刚刚在 Hermes Agent 里解锁了 {tier_part}“{name}” ☤",
     },
   },
 
@@ -624,6 +624,9 @@ export const zh: Translations = {
     createTask: "在此列创建任务",
     noTasks: "— 无任务 —",
     unassigned: "未分配",
+    needsAssignee: "需要负责人",
+    needsAssigneeHint:
+      "依赖已满足，但在你分配配置文件之前，调度器会跳过这个任务。",
     untitled: "（无标题）",
     loadingDetail: "加载中…",
     addComment: "添加评论…（按回车提交）",
@@ -745,5 +748,145 @@ export const zh: Translations = {
       "工作区路径（可选，留空则根据负责人推导）",
     logTruncated: "（显示最后 100 KB — 完整日志位于 ",
     logAt: "）",
+    clearFilters: "清除筛选",
+    delete: "删除",
+    setPriority: "设置优先级",
+    create: "创建",
+    copyCommandPrompt: "复制这条命令：",
+    dismissUntilReload: "隐藏到下次页面刷新",
+    docsLink: {
+      title: "在新标签页中打开 Hermes Kanban 文档",
+      aria: "Hermes Kanban 文档",
+    },
+    orchestration: {
+      loadFailed: "加载失败：",
+      settingsSaved: "设置已保存。",
+      saveFailed: "保存失败：",
+      header: "编排设置",
+      loadingMode: "正在加载模式…",
+      modeAutoTitle:
+        "编排：自动 —— 调度器会在每次 tick 自动分解新的 triage 任务。点击切换为手动（旧行为）。",
+      modeManualTitle:
+        "编排：手动 —— triage 任务会停留在 triage，直到你在每张卡片上点击 ⚗ 分解。点击切换为自动。",
+      label: "编排：",
+      auto: "自动",
+      manual: "手动",
+      configureTitle:
+        "配置 kanban 编排器（配置文件选择、默认负责人、自动分解、配置描述）",
+      orchestratorProfile: "编排器配置",
+      defaultAssignee: "默认负责人",
+      defaultValue: "（默认：{name}）",
+      resolved: "解析结果：{name}",
+      mode: "编排模式",
+      autoDecomposeLabel: "自动分解 triage 任务",
+      autoHint: "调度器会自动分解新的 triage 任务。",
+      manualHint: "triage 任务会停留在 triage，直到你点击 ⚗ 分解。",
+      profileDescriptions: "配置描述",
+      profileDescriptionsHelp:
+        "这些描述会指导编排器路由任务。点击 ⚗ 自动生成，或手动编辑后保存。",
+      noProfilesInstalled: "未安装任何配置。",
+      defaultTag: "（默认）",
+      autoReviewTag: "自动生成，待审核",
+      noDescriptionWarning: "⚠ 无描述",
+      descriptionPlaceholder: "这个配置擅长做什么？",
+      saveTitle: "将上面的描述保存为用户编写版本",
+      saveBusy: "保存中…",
+      descriptionSaved: "已保存 {name} 的描述。",
+      generateTitle: "根据此配置的技能和模型自动生成描述",
+      generateBusy: "生成中…",
+      autoGenerateLabel: "⚗ 自动",
+      descriptionGenerated: "已为 {name} 自动生成描述。",
+      generateFailed: "自动生成失败：",
+    },
+    boardSwitcher: {
+      switchAria: "切换 kanban 看板",
+      selectTitle: "看板是独立的工作流。每个看板都有自己的任务、租户和负责人。",
+      taskCount: "{n} 个任务",
+      newBoardHelp:
+        "创建新看板。适合需要独立工作流时使用（不同项目、不同团队、隔离试验区）。",
+    },
+    validation: {
+      slugRequired: "标识为必填项",
+    },
+    boardForm: {
+      descriptionPlaceholder: "这个看板主要处理什么？",
+    },
+    toolbar: {
+      searchHint: "按任务 ID、标题或描述做模糊匹配。会跨所有列匹配。",
+      tenantHint:
+        "租户是任务上的自由标签（例如客户、项目、团队）。可在任务抽屉或 kanban_create 中设置。",
+      assigneeHint:
+        "按已分配的 Hermes 配置过滤。配置就是会认领并执行任务的具名 agent 身份。",
+      showArchivedHint: "在看板视图中包含已归档任务。默认情况下归档任务会被隐藏。",
+      lanesByProfileHint: "按负责人对进行中的列分组",
+      nudgeDispatcherHint:
+        "立即唤醒调度器认领就绪任务，而不是等待下一次 tick。刚添加任务后如果希望立刻被处理，就用这个。",
+      refreshHint:
+        "从数据库重新加载看板。看板会在任务事件发生时自动刷新；这个按钮用于强制重新读取。",
+      clearFiltersHint: "清除所有当前筛选（搜索、租户、负责人、归档）。",
+    },
+    bulk: {
+      moveTodoTitle: "将选中的任务移动到待办。",
+      moveReadyTitle: "将选中的任务移动到就绪。就绪任务会在下一次 tick 被调度器拾取。",
+      blockConfirm: "阻塞 {n} 个任务？",
+      blockTitle: "阻塞选中的任务，并释放任何活动认领。",
+      unblockConfirm: "解除阻塞 {n} 个任务？",
+      unblockTitle: "解除选中任务的阻塞（提升为就绪）。",
+      completeTitle:
+        "将选中的任务标记为完成。会释放认领并解除依赖子任务的阻塞。随后会要求填写完成摘要。",
+      archiveTitle: "归档选中的任务。它们会从默认看板视图消失，但仍保留在数据库中。",
+      deleteTitle: "永久删除选中的任务。此操作不可撤销。",
+      setPriorityTitle: "设置选中任务的优先级。数值越高越先被认领。",
+      reassignTitle: "把选中的任务重新分配给其他 Hermes 配置。选择配置（或取消分配）后点击应用。",
+      reassignPlaceholder: "— 重新分配 —",
+      unassignOption: "（取消分配）",
+      applyTitle: "把所选负责人应用到所有选中任务。",
+      reclaimFirstTitle: "重新分配前先收回任何活动认领",
+      reclaimFirstLabel: "先收回",
+      selectAllVisibleTitle: "选择当前各列中所有可见卡片。",
+      selectAllVisible: "全选可见项",
+      clearSelectionTitle: "取消所有任务选择并隐藏此操作栏。",
+    },
+    columnUi: {
+      selectAllTitle: "选择此列中的所有任务",
+      selectAllAria: "选择 {column} 列中的所有任务",
+      taskCount: "此列中有 {n} 个任务",
+    },
+    taskUi: {
+      aria: "{title} — {id} — {status}",
+      selectTaskAria: "选择任务 {id}",
+      taskIdTitle: "任务 ID：{id}。可将此 ID 用于 kanban_show、/kanban show 或 hermes kanban show。",
+      activeDiagnosticsTitle: "{n} 条活动诊断（严重级别：{severity}）。点击查看详情。",
+      priorityTitle: "优先级 {priority}。优先级越高，调度器越先认领。",
+      tenantTitle: "租户：{tenant}。用于分组任务的自由标签（客户、项目、团队）。",
+      childProgressTitle: "{done}/{total} 个子任务已完成",
+      assignedProfileTitle: "已分配给 Hermes 配置 @{assignee}",
+      noProfileAssigned: "尚未分配配置。",
+      commentCountTitle: "此任务有 {n} 条评论",
+      linkCountTitle: "{parents} 个父任务，{children} 个子任务。父任务完成前，子任务会保持阻塞。",
+      createdAtTitle: "创建于 {createdAt}",
+    },
+    inlineCreateUi: {
+      specifierTitle:
+        "将负责细化此任务的 Hermes 配置（默认使用调度器配置的 specifier）。留空则由调度器选择。",
+      assigneeTitle:
+        "要分配的 Hermes 配置。留空后，当任务进入就绪状态时，调度器会从可用配置中选择。",
+      priorityTitle: "优先级。数值越高，越先被调度器认领。0 为默认值。",
+      skillsTitle: "将这些技能强制加载到 worker 中（除内置的 kanban-worker 外）。",
+      workspaceKindTitle:
+        "scratch：隔离的临时目录（默认）。worktree：在负责人配置下创建 git worktree。dir：使用下方精确路径（必填）。",
+      parentTitle: "可选父任务。在父任务标记为完成之前，子任务会停留在当前列中并保持阻塞。",
+    },
+    workerLogUi: {
+      refreshTitle: "刷新日志",
+    },
+    bodyEditorUi: {
+      editTitle: "编辑描述",
+    },
+    trash: {
+      confirm: "永久删除此任务？此操作不可撤销。",
+      confirmMany: "永久删除选中的 {n} 个任务？此操作不可撤销。",
+      dropHint: "拖到这里删除",
+    },
   },
 };
