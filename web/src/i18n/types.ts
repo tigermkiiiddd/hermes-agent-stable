@@ -810,5 +810,132 @@ export interface Translations {
     workspacePathOptional: string;
     logTruncated: string;
     logAt: string;
+    clearFilters?: string;
+    delete?: string;
+    setPriority?: string;
+    create?: string;
+    copyCommandPrompt?: string;
+    dismissUntilReload?: string;
+    docsLink?: {
+      title?: string;
+      aria?: string;
+    };
+    orchestration?: {
+      loadFailed?: string;
+      settingsSaved?: string;
+      saveFailed?: string;
+      header?: string;
+      loadingMode?: string;
+      modeAutoTitle?: string;
+      modeManualTitle?: string;
+      label?: string;
+      auto?: string;
+      manual?: string;
+      configureTitle?: string;
+      orchestratorProfile?: string;
+      defaultAssignee?: string;
+      defaultValue?: string;
+      resolved?: string;
+      mode?: string;
+      autoDecomposeLabel?: string;
+      autoHint?: string;
+      manualHint?: string;
+      profileDescriptions?: string;
+      profileDescriptionsHelp?: string;
+      noProfilesInstalled?: string;
+      defaultTag?: string;
+      autoReviewTag?: string;
+      noDescriptionWarning?: string;
+      descriptionPlaceholder?: string;
+      saveTitle?: string;
+      saveBusy?: string;
+      descriptionSaved?: string;
+      generateTitle?: string;
+      generateBusy?: string;
+      autoGenerateLabel?: string;
+      descriptionGenerated?: string;
+      generateFailed?: string;
+    };
+    boardSwitcher?: {
+      switchAria?: string;
+      selectTitle?: string;
+      taskCount?: string;
+      newBoardHelp?: string;
+    };
+    validation?: {
+      slugRequired?: string;
+    };
+    boardForm?: {
+      descriptionPlaceholder?: string;
+    };
+    toolbar?: {
+      searchHint?: string;
+      tenantHint?: string;
+      assigneeHint?: string;
+      showArchivedHint?: string;
+      lanesByProfileHint?: string;
+      nudgeDispatcherHint?: string;
+      refreshHint?: string;
+      clearFiltersHint?: string;
+    };
+    bulk?: {
+      moveTodoTitle?: string;
+      moveReadyTitle?: string;
+      blockConfirm?: string;
+      blockTitle?: string;
+      unblockConfirm?: string;
+      unblockTitle?: string;
+      completeTitle?: string;
+      archiveTitle?: string;
+      deleteTitle?: string;
+      setPriorityTitle?: string;
+      reassignTitle?: string;
+      reassignPlaceholder?: string;
+      unassignOption?: string;
+      applyTitle?: string;
+      reclaimFirstTitle?: string;
+      reclaimFirstLabel?: string;
+      selectAllVisibleTitle?: string;
+      selectAllVisible?: string;
+      clearSelectionTitle?: string;
+    };
+    columnUi?: {
+      selectAllTitle?: string;
+      selectAllAria?: string;
+      taskCount?: string;
+    };
+    taskUi?: {
+      aria?: string;
+      selectTaskAria?: string;
+      taskIdTitle?: string;
+      activeDiagnosticsTitle?: string;
+      priorityTitle?: string;
+      tenantTitle?: string;
+      childProgressTitle?: string;
+      assignedProfileTitle?: string;
+      noProfileAssigned?: string;
+      commentCountTitle?: string;
+      linkCountTitle?: string;
+      createdAtTitle?: string;
+    };
+    inlineCreateUi?: {
+      specifierTitle?: string;
+      assigneeTitle?: string;
+      priorityTitle?: string;
+      skillsTitle?: string;
+      workspaceKindTitle?: string;
+      parentTitle?: string;
+    };
+    workerLogUi?: {
+      refreshTitle?: string;
+    };
+    bodyEditorUi?: {
+      editTitle?: string;
+    };
+    trash?: {
+      confirm?: string;
+      confirmMany?: string;
+      dropHint?: string;
+    };
   };
 }
