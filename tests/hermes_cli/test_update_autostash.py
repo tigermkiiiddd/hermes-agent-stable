@@ -319,13 +319,15 @@ def test_cmd_update_retries_optional_extras_individually_when_all_fails(monkeypa
 
     def fake_run(cmd, **kwargs):
         recorded.append(cmd)
-        if cmd == ["git", "fetch", "origin"]:
+        if cmd == ["git", "remote", "get-url", "upstream"]:
+            return SimpleNamespace(stdout="https://github.com/NousResearch/hermes-agent.git\n", stderr="", returncode=0)
+        if cmd == ["git", "fetch", "upstream"]:
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if cmd == ["git", "rev-list", "HEAD..upstream/main", "--count"]:
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if cmd == ["git", "pull", "--ff-only", "upstream", "main"]:
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         if cmd == ["/usr/bin/uv", "pip", "install", "-e", ".[all]"]:
             raise CalledProcessError(returncode=1, cmd=cmd)
@@ -368,13 +370,15 @@ def test_cmd_update_succeeds_with_extras(monkeypatch, tmp_path):
 
     def fake_run(cmd, **kwargs):
         recorded.append(cmd)
-        if cmd == ["git", "fetch", "origin"]:
+        if cmd == ["git", "remote", "get-url", "upstream"]:
+            return SimpleNamespace(stdout="https://github.com/NousResearch/hermes-agent.git\n", stderr="", returncode=0)
+        if cmd == ["git", "fetch", "upstream"]:
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if cmd == ["git", "rev-list", "HEAD..upstream/main", "--count"]:
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if cmd == ["git", "pull", "--ff-only", "upstream", "main"]:
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -453,7 +457,13 @@ def _make_update_side_effect(
     def side_effect(cmd, **kwargs):
         recorded.append(cmd)
         joined = " ".join(str(c) for c in cmd)
-        if "fetch" in joined and "origin" in joined:
+        if cmd == ["git", "remote", "get-url", "upstream"]:
+            return SimpleNamespace(
+                stdout="https://github.com/NousResearch/hermes-agent.git\n",
+                stderr="",
+                returncode=0,
+            )
+        if "fetch" in joined and "upstream" in joined:
             if fetch_fails:
                 return SimpleNamespace(stdout="", stderr=fetch_stderr, returncode=128)
             return SimpleNamespace(stdout="", stderr="", returncode=0)
@@ -481,7 +491,7 @@ def _make_update_side_effect(
 
 
 def test_cmd_update_falls_back_to_reset_when_ff_only_fails(monkeypatch, tmp_path, capsys):
-    """When --ff-only fails (diverged history), update resets to origin/{branch}."""
+    """When --ff-only fails (diverged history), update resets to upstream/{branch}."""
     _setup_update_mocks(monkeypatch, tmp_path)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
@@ -492,7 +502,7 @@ def test_cmd_update_falls_back_to_reset_when_ff_only_fails(monkeypatch, tmp_path
 
     reset_calls = [c for c in recorded if "reset" in c and "--hard" in c]
     assert len(reset_calls) == 1
-    assert reset_calls[0] == ["git", "reset", "--hard", "origin/main"]
+    assert reset_calls[0] == ["git", "reset", "--hard", "upstream/main"]
 
     out = capsys.readouterr().out
     assert "Fast-forward not possible" in out
@@ -666,3 +676,34 @@ def test_cmd_update_skips_stash_restore_when_reset_fails(monkeypatch, tmp_path, 
 
     out = capsys.readouterr().out
     assert "preserved in stash" in out
+
+
+def test_cmd_update_auto_adds_official_upstream_when_missing(monkeypatch, tmp_path, capsys):
+    """Update should auto-add the official upstream remote instead of falling back to origin."""
+    _setup_update_mocks(monkeypatch, tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+
+    recorded = []
+
+    def fake_run(cmd, **kwargs):
+        recorded.append(cmd)
+        if cmd == ["git", "remote", "get-url", "upstream"]:
+            return SimpleNamespace(stdout="", stderr="", returncode=2)
+        if cmd == ["git", "remote", "add", "upstream", "https://github.com/NousResearch/hermes-agent.git"]:
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        if cmd == ["git", "fetch", "upstream"]:
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+            return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
+        if cmd == ["git", "rev-list", "HEAD..upstream/main", "--count"]:
+            return SimpleNamespace(stdout="0\n", stderr="", returncode=0)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(hermes_main.subprocess, "run", fake_run)
+
+    hermes_main.cmd_update(SimpleNamespace())
+
+    assert ["git", "remote", "add", "upstream", "https://github.com/NousResearch/hermes-agent.git"] in recorded
+    assert ["git", "fetch", "upstream"] in recorded
+    out = capsys.readouterr().out
+    assert "Added upstream" in out
