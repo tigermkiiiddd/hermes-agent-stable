@@ -1,11 +1,20 @@
 import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Switch } from "@nous-research/ui/ui/components/switch";
-import { Input } from "@nous-research/ui/ui/components/input";
-import { Label } from "@nous-research/ui/ui/components/label";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useI18n } from "@/i18n";
+import {
+  localizeConfigFieldDescription,
+  localizeConfigFieldLabel,
+  localizeConfigListItemLabel,
+  localizeConfigListPlaceholder,
+  localizeConfigSelectOption,
+} from "@/lib/configLocalization";
 
 function FieldHint({ schema, schemaKey }: { schema: Record<string, unknown>; schemaKey: string }) {
+  const { locale } = useI18n();
   const keyPath = schemaKey.includes(".") ? schemaKey : "";
-  const description = schema.description ? String(schema.description) : "";
+  const description = localizeConfigFieldDescription(schemaKey, schema, locale);
 
   if (!keyPath && !description) return null;
 
@@ -37,12 +46,15 @@ function NestedValueEditor({
   value: unknown;
   onChange: (v: unknown) => void;
 }) {
+  const { locale } = useI18n();
   if (isRecord(value)) {
     return (
       <div className="grid gap-2 border border-border p-2">
         {Object.entries(value).map(([subKey, subVal]) => (
           <div key={subKey} className="grid gap-1">
-            <Label className="text-xs text-muted-foreground">{subKey}</Label>
+            <Label className="text-xs text-muted-foreground">
+              {localizeConfigFieldLabel(`${fieldKey}.${subKey}`, locale)}
+            </Label>
             <NestedValueEditor
               fieldKey={`${fieldKey}.${subKey}`}
               value={subVal}
@@ -59,7 +71,9 @@ function NestedValueEditor({
       <div className="grid gap-2">
         {value.map((item, index) => (
           <div key={`${fieldKey}.${index}`} className="grid gap-1">
-            <Label className="text-xs text-muted-foreground">Item {index + 1}</Label>
+            <Label className="text-xs text-muted-foreground">
+              {localizeConfigListItemLabel(index, locale)}
+            </Label>
             <NestedValueEditor
               fieldKey={`${fieldKey}.${index}`}
               value={item}
@@ -88,8 +102,8 @@ export function AutoField({
   value,
   onChange,
 }: AutoFieldProps) {
-  const rawLabel = schemaKey.split(".").pop() ?? schemaKey;
-  const label = rawLabel.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const { locale } = useI18n();
+  const label = localizeConfigFieldLabel(schemaKey, locale);
 
   if (isRecord(value) || (Array.isArray(value) && value.some((item) => isRecord(item)))) {
     return (
@@ -122,7 +136,7 @@ export function AutoField({
         <Select value={String(value ?? "")} onValueChange={(v) => onChange(v)}>
           {options.map((opt) => (
             <SelectOption key={opt} value={opt}>
-              {opt || "(none)"}
+              {localizeConfigSelectOption(schemaKey, opt, locale)}
             </SelectOption>
           ))}
         </Select>
@@ -183,7 +197,7 @@ export function AutoField({
                 .filter(Boolean),
             )
           }
-          placeholder="comma-separated values"
+          placeholder={localizeConfigListPlaceholder(locale)}
         />
       </div>
     );

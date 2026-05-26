@@ -477,6 +477,23 @@ export interface Translations {
       logging: string;
       discord: string;
       auxiliary: string;
+      bedrock: string;
+      curator: string;
+      gateway: string;
+      kanban: string;
+      lsp: string;
+      matrix: string;
+      mattermost: string;
+      model_catalog: string;
+      openrouter: string;
+      secrets: string;
+      sessions: string;
+      slack: string;
+      tool_loop_guardrails: string;
+      tool_output: string;
+      updates: string;
+      web: string;
+      x_search: string;
     };
   };
 

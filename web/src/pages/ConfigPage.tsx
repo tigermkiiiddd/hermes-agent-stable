@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   Code,
   Download,
@@ -41,6 +41,13 @@ import { getNestedValue, setNestedValue } from "@/lib/nested";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Toast } from "@nous-research/ui/ui/components/toast";
 import { AutoField } from "@/components/AutoField";
+import {
+  localizeConfigCategory,
+  localizeConfigFieldDescription,
+  localizeConfigFieldLabel,
+  localizeConfigResetDescription,
+  localizeConfigSectionName,
+} from "@/lib/configLocalization";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { ListItem } from "@nous-research/ui/ui/components/list-item";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -122,7 +129,7 @@ export default function ConfigPage() {
   const [confirmReset, setConfirmReset] = useState(false);
   const { toast, showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { setEnd } = usePageHeader();
 
   useLayoutEffect(() => {
@@ -155,11 +162,10 @@ export default function ConfigPage() {
     return () => setEnd(null);
   }, [config, schema, searchQuery, setEnd, t.common.clear, t.common.search]);
 
-  function prettyCategoryName(cat: string): string {
-    const key = cat as keyof typeof t.config.categories;
-    if (t.config.categories[key]) return t.config.categories[key];
-    return cat.charAt(0).toUpperCase() + cat.slice(1);
-  }
+  const prettyCategoryName = useCallback(
+    (cat: string): string => localizeConfigCategory(cat, t, locale),
+    [locale, t],
+  );
 
   useEffect(() => {
     api
@@ -210,7 +216,7 @@ export default function ConfigPage() {
         .catch(() => showToast(t.config.failedToLoadRaw, "error"))
         .finally(() => setYamlLoading(false));
     }
-  }, [yamlMode]);
+  }, [showToast, t.config.failedToLoadRaw, yamlMode]);
 
   /* ---- Categories ---- */
   const categories = useMemo(() => {
@@ -243,20 +249,20 @@ export default function ConfigPage() {
   const searchMatchedFields = useMemo(() => {
     if (!isSearching || !schema) return [];
     return Object.entries(schema).filter(([key, s]) => {
-      const label = key.split(".").pop() ?? key;
-      const humanLabel = label.replace(/_/g, " ");
+      const localizedLabel = localizeConfigFieldLabel(key, locale);
+      const localizedDescription = localizeConfigFieldDescription(key, s, locale);
+      const localizedCategory = prettyCategoryName(String(s.category ?? "general"));
       return (
         key.toLowerCase().includes(lowerSearch) ||
-        humanLabel.toLowerCase().includes(lowerSearch) ||
-        String(s.category ?? "")
-          .toLowerCase()
-          .includes(lowerSearch) ||
+        localizedLabel.toLowerCase().includes(lowerSearch) ||
+        localizedCategory.toLowerCase().includes(lowerSearch) ||
         String(s.description ?? "")
           .toLowerCase()
-          .includes(lowerSearch)
+          .includes(lowerSearch) ||
+        localizedDescription.toLowerCase().includes(lowerSearch)
       );
     });
-  }, [isSearching, lowerSearch, schema]);
+  }, [isSearching, locale, lowerSearch, prettyCategoryName, schema]);
 
   /* ---- Active tab fields ---- */
   const activeFields = useMemo(() => {
@@ -403,7 +409,7 @@ export default function ConfigPage() {
           {showSection && (
             <div className="flex items-center gap-2 pt-4 pb-2 first:pt-0">
               <span className="font-mondwest text-display text-xs font-semibold tracking-wider text-muted-foreground">
-                {section.replace(/_/g, " ")}
+                    {localizeConfigSectionName(section, locale)}
               </span>
               <div className="flex-1 border-t border-border" />
             </div>
@@ -659,9 +665,10 @@ export default function ConfigPage() {
             ? t.config.searchResults
             : prettyCategoryName(activeCategory),
         )}
-        description={`This will reset ${
-          (isSearching ? searchMatchedFields : activeFields).length
-        } field(s) to their default values.`}
+        description={localizeConfigResetDescription(
+          (isSearching ? searchMatchedFields : activeFields).length,
+          locale,
+        )}
         destructive
         confirmLabel={t.config.resetDefaults}
       />
