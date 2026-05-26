@@ -35,6 +35,7 @@ import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
+import { getDashboardUi, useDashboardUi } from "@/i18n/dashboard-ui";
 import { api } from "@/lib/api";
 import { normalizeSessionTitle } from "@/lib/chat-title";
 import { PluginSlot } from "@/plugins";
@@ -136,10 +137,16 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // the SPA authenticates the WS via a single-use ticket (buildWsAuthParam),
   // so a missing token there is expected, not an error.
   const [banner, setBanner] = useState<string | null>(() =>
-    typeof window !== "undefined" &&
-    !window.__HERMES_SESSION_TOKEN__ &&
-    !window.__HERMES_AUTH_REQUIRED__
-      ? "Session token unavailable. Open this page through `hermes dashboard`, not directly."
+    typeof window !== "undefined" && !window.__HERMES_SESSION_TOKEN__
+      ? (() => {
+          try {
+            return getDashboardUi(
+              window.localStorage.getItem("hermes-locale") || "en",
+            ).chatPage.tokenUnavailable;
+          } catch {
+            return getDashboardUi("en").chatPage.tokenUnavailable;
+          }
+        })()
       : null,
   );
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
@@ -183,6 +190,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     title: string | null;
   }>({ scope: "", title: null });
   const { t } = useI18n();
+  const ui = useDashboardUi();
   const closeMobilePanel = useCallback(() => setMobilePanelOpenRaw(false), []);
   const modelToolsLabel = useMemo(
     () => `${t.app.modelToolsSheetTitle} ${t.app.modelToolsSheetSubtitle}`,
@@ -693,48 +701,18 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       const why = ev.reason ? ` reason=${ev.reason}` : "";
       console.warn(`[chat] PTY WebSocket closed code=${ev.code}${why}`);
       if (ev.code === 4401) {
-        setBanner(
-          ev.reason
-            ? `Auth failed (${ev.reason}). Reload to refresh the session.`
-            : "Auth failed. Reload the page to refresh the session token.",
-        );
+        setBanner(ui.chatPage.authFailed);
         return;
       }
       if (ev.code === 4403) {
-        // Host/Origin mismatch (DNS-rebinding guard).
-        setBanner(
-          ev.reason
-            ? `Refused: ${ev.reason}.`
-            : "Refused: request host/origin doesn't match the dashboard.",
-        );
-        return;
-      }
-      if (ev.code === 4404) {
-        setBanner(
-          "Embedded chat is disabled on this server (start it with --tui).",
-        );
-        return;
-      }
-      if (ev.code === 4408) {
-        setBanner(
-          ev.reason
-            ? `Refused: ${ev.reason}.`
-            : "Refused: your client isn't permitted (server bound to localhost only).",
-        );
+        setBanner(ui.chatPage.localhostOnly);
         return;
       }
       if (ev.code === 1011) {
         // Server already wrote an ANSI error frame.
         return;
       }
-      // Normal/clean exit: the agent process ended (e.g. the user typed
-      // `/exit`, or started a new session). NS-504: surface an explicit
-      // restart affordance instead of leaving a dead terminal that only a
-      // full page refresh could recover.
-      term.write(
-        `\r\n\x1b[90m[session ended (code ${ev.code})]\x1b[0m\r\n`,
-      );
-      setSessionEnded(true);
+      term.write(`\r\n\x1b[90m${ui.chatPage.sessionEnded}\x1b[0m\r\n`);
     };
 
     // Keystrokes → PTY.
@@ -802,7 +780,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         copyResetRef.current = null;
       }
     };
-  }, [channel, resumeParam, scopedProfile, reconnectNonce]);
+  }, [
+    channel,
+    resumeParam,
+    ui.chatPage.authFailed,
+    ui.chatPage.localhostOnly,
+    ui.chatPage.sessionEnded,
+  ]);
 
   // When the user returns to the chat tab (isActive: false → true), the
   // terminal host just transitioned from display:none to display:flex.
@@ -1008,8 +992,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           <Button
             ghost
             onClick={handleCopyLast}
-            title="Copy last assistant response as raw markdown"
-            aria-label="Copy last assistant response"
+            title={ui.chatPage.copyRawTitle}
+            aria-label={ui.chatPage.copyRawAria}
             className={cn(
               "absolute z-10",
               "normal-case tracking-normal font-normal",
@@ -1025,7 +1009,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             <span className="inline-flex items-center gap-1.5">
               <Copy className="h-3 w-3 shrink-0" />
               <span className="hidden min-[400px]:inline tracking-wide">
-                {copyState === "copied" ? "copied" : "copy last response"}
+                {copyState === "copied"
+                  ? ui.chatPage.copyButtonCopied
+                  : ui.chatPage.copyButtonIdle}
               </span>
             </span>
           </Button>

@@ -27,6 +27,7 @@ import { Card, CardContent } from "@nous-research/ui/ui/components/card";
 import { Input } from "@nous-research/ui/ui/components/input";
 import { Label } from "@nous-research/ui/ui/components/label";
 import { useI18n } from "@/i18n";
+import { type DashboardUiStrings, useDashboardUi } from "@/i18n/dashboard-ui";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { PluginSlot } from "@/plugins";
 import { Segmented } from "@nous-research/ui/ui/components/segmented";
@@ -114,7 +115,7 @@ function getJobName(job: CronJob): string {
   return asText(job.name).trim();
 }
 
-function getJobTitle(job: CronJob): string {
+function getJobTitle(job: CronJob, ui?: DashboardUiStrings): string {
   const name = getJobName(job);
   if (name) return name;
 
@@ -124,7 +125,7 @@ function getJobTitle(job: CronJob): string {
   const script = asText(job.script);
   if (script) return truncateText(script, 60);
 
-  return job.id || "Cron job";
+  return job.id || ui?.cronPage.fallbackJobTitle || "Cron job";
 }
 
 function getJobScheduleDisplay(
@@ -144,8 +145,13 @@ function getJobScheduleDisplay(
   );
 }
 
-function getJobState(job: CronJob): string {
-  return asText(job.state) || (job.enabled === false ? "disabled" : "scheduled");
+function getJobState(job: CronJob, ui?: DashboardUiStrings): string {
+  return (
+    asText(job.state) ||
+    (job.enabled === false
+      ? ui?.cronPage.stateLabels.disabled || "disabled"
+      : ui?.cronPage.stateLabels.scheduled || "scheduled")
+  );
 }
 
 function getJobProfile(job: CronJob): string {
@@ -156,14 +162,19 @@ function getJobKey(job: CronJob): string {
   return `${getJobProfile(job)}:${job.id}`;
 }
 
-function splitJobKey(key: string): { profile: string; id: string } {
+function splitJobKey(
+  key: string,
+): { profile: string; id: string } {
   const idx = key.indexOf(":");
   if (idx === -1) return { profile: "default", id: key };
-  return { profile: key.slice(0, idx) || "default", id: key.slice(idx + 1) };
+  return {
+    profile: key.slice(0, idx) || "default",
+    id: key.slice(idx + 1),
+  };
 }
 
-function profileLabel(profile: string): string {
-  return profile === "default" ? "default" : profile;
+function profileLabel(profile: string, ui?: DashboardUiStrings): string {
+  return profile === "default" ? ui?.cronPage.defaultProfile || "default" : profile;
 }
 
 const STATUS_TONE: Record<string, "success" | "warning" | "destructive"> = {
@@ -181,7 +192,8 @@ export default function CronPage() {
   const [view, setView] = useState<"jobs" | "blueprints">("jobs");
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const ui = useDashboardUi();
   const { setEnd } = usePageHeader();
 
   // Translation surface for the human-readable schedule describer.
@@ -360,8 +372,8 @@ export default function CronPage() {
     deliveryTargets.filter((target) => target.id !== "local").length === 0;
 
   const handleCreate = async () => {
-    if (!prompt.trim() || !scheduleString) {
-      showToast(`${t.cron.prompt} & ${t.cron.schedule} required`, "error");
+    if (!prompt.trim() || !schedule.trim()) {
+      showToast(ui.cronPage.promptScheduleRequired, "error");
       return;
     }
     setCreating(true);
@@ -427,13 +439,13 @@ export default function CronPage() {
       if (isPaused) {
         await api.resumeCronJob(job.id, profile);
         showToast(
-          `${t.cron.resume}: "${truncateText(getJobTitle(job), 30)}"`,
+          `${t.cron.resume}: "${truncateText(getJobTitle(job, ui), 30)}"`,
           "success",
         );
       } else {
         await api.pauseCronJob(job.id, profile);
         showToast(
-          `${t.cron.pause}: "${truncateText(getJobTitle(job), 30)}"`,
+          `${t.cron.pause}: "${truncateText(getJobTitle(job, ui), 30)}"`,
           "success",
         );
       }
@@ -447,7 +459,7 @@ export default function CronPage() {
     try {
       await api.triggerCronJob(job.id, getJobProfile(job));
       showToast(
-        `${t.cron.triggerNow}: "${truncateText(getJobTitle(job), 30)}"`,
+        `${t.cron.triggerNow}: "${truncateText(getJobTitle(job, ui), 30)}"`,
         "success",
       );
       loadJobs();
@@ -464,7 +476,9 @@ export default function CronPage() {
         try {
           await api.deleteCronJob(id, profile);
           showToast(
-            `${t.common.delete}: "${job ? truncateText(getJobTitle(job), 30) : id}"`,
+            `${t.common.delete}: "${
+              job ? truncateText(getJobTitle(job, ui), 30) : id
+            }"`,
             "success",
           );
           loadJobs();
@@ -534,7 +548,7 @@ export default function CronPage() {
         title={t.cron.confirmDeleteTitle}
         description={
           pendingJob
-            ? `"${truncateText(getJobTitle(pendingJob), 40)}" — ${
+            ? `"${truncateText(getJobTitle(pendingJob, ui), 40)}" — ${
                 t.cron.confirmDeleteMessage
               }`
             : t.cron.confirmDeleteMessage
@@ -558,7 +572,7 @@ export default function CronPage() {
               size="icon"
               onClick={() => setCreateModalOpen(false)}
               className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
+              aria-label={t.common.close}
             >
               <X />
             </Button>
@@ -574,7 +588,7 @@ export default function CronPage() {
 
             <div className="p-5 grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="cron-profile">Profile</Label>
+                <Label htmlFor="cron-profile">{ui.cronPage.profileLabel}</Label>
                 <Select
                   id="cron-profile"
                   value={createProfile}
@@ -582,7 +596,7 @@ export default function CronPage() {
                 >
                   {profiles.map((profile) => (
                     <SelectOption key={profile.name} value={profile.name}>
-                      {profileLabel(profile.name)}
+                      {profileLabel(profile.name, ui)}
                     </SelectOption>
                   ))}
                 </Select>
@@ -778,16 +792,16 @@ export default function CronPage() {
           </H2>
 
           <div className="grid gap-1 min-w-[220px]">
-            <Label htmlFor="cron-profile-filter">Profile</Label>
+            <Label htmlFor="cron-profile-filter">{ui.cronPage.profileLabel}</Label>
             <Select
               id="cron-profile-filter"
               value={selectedProfile}
               onValueChange={(v) => setSelectedProfile(v)}
             >
-              <SelectOption value="all">All profiles</SelectOption>
+              <SelectOption value="all">{ui.cronPage.allProfiles}</SelectOption>
               {profiles.map((profile) => (
                 <SelectOption key={profile.name} value={profile.name}>
-                  {profileLabel(profile.name)}
+                  {profileLabel(profile.name, ui)}
                 </SelectOption>
               ))}
             </Select>
@@ -803,9 +817,9 @@ export default function CronPage() {
         )}
 
         {jobs.map((job) => {
-          const state = getJobState(job);
+          const state = getJobState(job, ui);
           const promptText = getJobPrompt(job);
-          const title = getJobTitle(job);
+          const title = getJobTitle(job, ui);
           const hasName = Boolean(getJobName(job));
           const deliver = asText(job.deliver);
           const profile = getJobProfile(job);
@@ -820,9 +834,9 @@ export default function CronPage() {
                       {title}
                     </span>
                     <Badge tone={STATUS_TONE[state] ?? "secondary"}>
-                      {state}
+                      {ui.cronPage.stateLabels[state] ?? state}
                     </Badge>
-                    <Badge tone="outline">{profileLabel(profile)}</Badge>
+                    <Badge tone="outline">{profileLabel(profile, ui)}</Badge>
                     {deliver && deliver !== "local" && (
                       <Badge tone="outline">{deliver}</Badge>
                     )}

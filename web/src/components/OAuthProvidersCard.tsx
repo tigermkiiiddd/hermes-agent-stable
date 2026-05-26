@@ -21,6 +21,7 @@ import { Badge } from "@nous-research/ui/ui/components/badge";
 import { ConfirmDialog } from "@nous-research/ui/ui/components/confirm-dialog";
 import { OAuthLoginModal } from "@/components/OAuthLoginModal";
 import { useI18n } from "@/i18n";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 
 interface Props {
   onError?: (msg: string) => void;
@@ -57,6 +58,7 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
   const [disconnectTarget, setDisconnectTarget] =
     useState<OAuthProvider | null>(null);
   const { t } = useI18n();
+  const ui = useDashboardUi();
 
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -66,9 +68,11 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
     api
       .getOAuthProviders()
       .then((resp) => setProviders(resp.providers))
-      .catch((e) => onErrorRef.current?.(`Failed to load providers: ${e}`))
+      .catch((e) =>
+        onErrorRef.current?.(ui.oauth.failedToLoadProviders(String(e))),
+      )
       .finally(() => setLoading(false));
-  }, []);
+  }, [ui.oauth]);
 
   useEffect(() => {
     refresh();
@@ -278,7 +282,9 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
           if (disconnectTarget) void handleDisconnect(disconnectTarget);
         }}
         title={`${t.oauth.disconnect} ${disconnectTarget?.name ?? ""}?`}
-        description={`This will remove the stored OAuth tokens for ${disconnectTarget?.name ?? "this provider"}. You will need to re-authenticate to use it again.`}
+        description={ui.oauth.disconnectDescription(
+          disconnectTarget?.name ?? t.common.other,
+        )}
         destructive
         confirmLabel={t.oauth.disconnect}
       />

@@ -30,6 +30,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 import { PluginSlot } from "@/plugins";
 import { ModelPickerDialog } from "@/components/ModelPickerDialog";
 import { ModelReloadConfirm } from "@/components/ModelReloadConfirm";
@@ -54,6 +55,15 @@ const AUX_TASKS: readonly { key: string; label: string; hint: string }[] = [
   { key: "profile_describer", label: "Profile Describer", hint: "Auto profile descriptions" },
   { key: "curator", label: "Curator", hint: "Skill-usage review" },
 ] as const;
+
+function useLocalizedAuxTasks() {
+  const ui = useDashboardUi();
+  return AUX_TASKS.map((task) => ({
+    ...task,
+    label: ui.modelsPage.auxTasks[task.key]?.label ?? task.label,
+    hint: ui.modelsPage.auxTasks[task.key]?.hint ?? task.hint,
+  }));
+}
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -93,20 +103,35 @@ function TokenBar({
   cacheRead: number;
   reasoning: number;
 }) {
+  const ui = useDashboardUi();
   const total = input + output + cacheRead + reasoning;
   if (total === 0) return null;
 
-  // Segments carry a CSS color value (hex or `var(--token)`) rather than
-  // a Tailwind class so the input/output series can pick up the active
-  // theme's `--series-*-token` vars — see `themes/types.ts`
-  // `ThemeSeriesColors`. The /60–/70 fade on the bar is applied via
-  // color-mix on the same value so themes don't need to ship two
-  // separate hex literals.
-  const segments: Array<{ color: string; label: string; value: number }> = [
-    { value: cacheRead, color: "#60a5fa", label: "Cache Read" }, // tailwind blue-400
-    { value: reasoning, color: "#c084fc", label: "Reasoning" }, // tailwind purple-400
-    { value: input, color: "var(--series-input-token)", label: "Input" },
-    { value: output, color: "var(--series-output-token)", label: "Output" },
+  const segments = [
+    {
+      value: cacheRead,
+      color: "bg-blue-400/60",
+      dotColor: "bg-blue-400",
+      label: ui.modelsPage.tokenLegend.cacheRead,
+    },
+    {
+      value: reasoning,
+      color: "bg-purple-400/60",
+      dotColor: "bg-purple-400",
+      label: ui.modelsPage.tokenLegend.reasoning,
+    },
+    {
+      value: input,
+      color: "bg-[#ffe6cb]/70",
+      dotColor: "bg-[#ffe6cb]",
+      label: ui.modelsPage.tokenLegend.input,
+    },
+    {
+      value: output,
+      color: "bg-emerald-500/70",
+      dotColor: "bg-emerald-500",
+      label: ui.modelsPage.tokenLegend.output,
+    },
   ].filter((s) => s.value > 0);
 
   return (
@@ -155,6 +180,7 @@ function CapabilityBadges({
 }: {
   capabilities: ModelsAnalyticsModelEntry["capabilities"];
 }) {
+  const ui = useDashboardUi();
   const hasAny =
     capabilities.supports_tools ||
     capabilities.supports_vision ||
@@ -165,18 +191,18 @@ function CapabilityBadges({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {capabilities.supports_tools && (
-        <span className="inline-flex items-center gap-1 bg-success/10 px-1.5 py-0.5 text-xs font-medium text-success">
-          <Wrench className="h-2.5 w-2.5" /> Tools
+        <span className="inline-flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <Wrench className="h-2.5 w-2.5" /> {ui.modelsPage.capabilityBadges.tools}
         </span>
       )}
       {capabilities.supports_vision && (
         <span className="inline-flex items-center gap-1 bg-blue-500/10 px-1.5 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-          <Eye className="h-2.5 w-2.5" /> Vision
+          <Eye className="h-2.5 w-2.5" /> {ui.modelsPage.capabilityBadges.vision}
         </span>
       )}
       {capabilities.supports_reasoning && (
         <span className="inline-flex items-center gap-1 bg-purple-500/10 px-1.5 py-0.5 text-xs font-medium text-purple-600 dark:text-purple-400">
-          <Brain className="h-2.5 w-2.5" /> Reasoning
+          <Brain className="h-2.5 w-2.5" /> {ui.modelsPage.capabilityBadges.reasoning}
         </span>
       )}
       {capabilities.model_family && (
@@ -207,6 +233,9 @@ function UseAsMenu({
   mainAuxTask: string | null;
   onAssigned(): void;
 }) {
+  const { t } = useI18n();
+  const ui = useDashboardUi();
+  const localizedAuxTasks = useLocalizedAuxTasks();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +251,7 @@ function UseAsMenu({
     confirmExpensiveModel = false,
   ) => {
     if (!provider || !model) {
-      setError("Missing provider/model");
+      setError(`${ui.modelsPage.mainModel}: provider/model missing`);
       return;
     }
     setBusy(true);
@@ -275,7 +304,7 @@ function UseAsMenu({
         className="h-6 px-2 text-xs uppercase"
         prefix={busy ? <Spinner /> : null}
       >
-        Use as <ChevronDown className="h-3 w-3" />
+        {ui.modelsPage.useAs} <ChevronDown className="h-3 w-3" />
       </Button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] border border-border bg-card shadow-lg">
@@ -287,17 +316,17 @@ function UseAsMenu({
           >
             <span className="flex items-center gap-2">
               <Star className="h-3 w-3" />
-              Main model
+              {ui.modelsPage.mainModel}
             </span>
             {isMain && (
               <span className="text-display text-xs tracking-wider text-primary">
-                current
+                {ui.modelsPage.currentTag}
               </span>
             )}
           </button>
 
           <div className="border-t border-border/50 px-3 py-1.5 text-display text-xs tracking-wider text-text-tertiary">
-            Auxiliary task
+            {ui.modelsPage.auxiliaryTask}
           </div>
 
           <button
@@ -306,10 +335,10 @@ function UseAsMenu({
             disabled={busy}
             className="flex w-full items-center justify-between px-3 py-1.5 text-xs uppercase hover:bg-muted/50 disabled:opacity-40"
           >
-            <span>All auxiliary tasks</span>
+            <span>{ui.modelsPage.allAuxiliaryTasks}</span>
           </button>
 
-          {AUX_TASKS.map((t) => (
+          {localizedAuxTasks.map((t) => (
             <button
               key={t.key}
               type="button"
@@ -320,7 +349,7 @@ function UseAsMenu({
               <span>{t.label}</span>
               {mainAuxTask === t.key && (
                 <span className="text-display text-xs tracking-wider text-primary">
-                  current
+                  {ui.modelsPage.currentTag}
                 </span>
               )}
             </button>
@@ -373,6 +402,7 @@ function ModelCard({
   showTokens: boolean;
 }) {
   const { t } = useI18n();
+  const ui = useDashboardUi();
   const provider = entry.provider || modelVendor(entry.model);
   const totalTokens = entry.input_tokens + entry.output_tokens;
   const caps = entry.capabilities;
@@ -387,6 +417,9 @@ function ModelCard({
     aux.find(
       (a) => a.provider === provider && a.model === entry.model,
     )?.task ?? null;
+  const localizedMainAuxTask =
+    mainAuxTask &&
+    (ui.modelsPage.auxTasks[mainAuxTask]?.label ?? mainAuxTask);
 
   return (
     <Card
@@ -404,12 +437,12 @@ function ModelCard({
               </CardTitle>
               {isMain && (
                 <span className="inline-flex items-center gap-0.5 bg-primary/15 px-1.5 py-0.5 text-display text-xs font-medium tracking-wider text-primary">
-                  <Star className="h-2.5 w-2.5" /> main
+                  <Star className="h-2.5 w-2.5" /> {ui.modelsPage.mainBadge}
                 </span>
               )}
               {mainAuxTask && (
                 <span className="inline-flex items-center bg-purple-500/10 px-1.5 py-0.5 text-display text-xs font-medium tracking-wider text-purple-600 dark:text-purple-400">
-                  aux · {mainAuxTask}
+                  {ui.modelsPage.auxiliaryBadge} · {localizedMainAuxTask}
                 </span>
               )}
             </div>
@@ -421,12 +454,12 @@ function ModelCard({
               )}
               {caps.context_window && caps.context_window > 0 && (
                 <span className="text-xs text-text-secondary">
-                  {formatTokenCount(caps.context_window)} ctx
+                  {formatTokenCount(caps.context_window)} {ui.modelsPage.contextShort}
                 </span>
               )}
               {caps.max_output_tokens && caps.max_output_tokens > 0 && (
                 <span className="text-xs text-text-secondary">
-                  {formatTokenCount(caps.max_output_tokens)} out
+                  {formatTokenCount(caps.max_output_tokens)} {ui.modelsPage.outputShort}
                 </span>
               )}
             </div>
@@ -545,6 +578,8 @@ function AuxiliaryTasksModal({
   onSaved(): void;
   onClose(): void;
 }) {
+  const ui = useDashboardUi();
+  const localizedAuxTasks = useLocalizedAuxTasks();
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -581,7 +616,7 @@ function AuxiliaryTasksModal({
           size="icon"
           onClick={onClose}
           className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-          aria-label="Close"
+          aria-label={t.common.close}
         >
           <X />
         </Button>
@@ -592,7 +627,7 @@ function AuxiliaryTasksModal({
               id="aux-modal-title"
               className="font-mondwest text-display text-base tracking-wider"
             >
-              Auxiliary Tasks
+              {ui.modelsPage.auxModalTitle}
             </h2>
             <Button
               size="sm"
@@ -602,19 +637,16 @@ function AuxiliaryTasksModal({
               className="h-6 text-xs uppercase"
               prefix={resetBusy ? <Spinner /> : null}
             >
-              Reset all to auto
+              {ui.modelsPage.resetAllToAuto}
             </Button>
           </div>
           <p className="text-xs text-text-secondary mt-2">
-            Auxiliary tasks handle side-jobs like vision, session search, and
-            compression. <span className="font-mono">auto</span> means
-            &quot;use the main model&quot;. Override per-task when you want a
-            cheap/fast model for a specific job.
+            {ui.modelsPage.auxDescription}
           </p>
         </header>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-1">
-          {AUX_TASKS.map((t) => {
+          {localizedAuxTasks.map((t) => {
             const cur = aux?.tasks.find((a) => a.task === t.key);
             const isAuto =
               !cur || cur.provider === "auto" || !cur.provider;
@@ -632,8 +664,8 @@ function AuxiliaryTasksModal({
                   </div>
                   <div className="text-xs font-mono text-text-secondary truncate">
                     {isAuto
-                      ? "auto (use main model)"
-                      : `${cur?.provider} · ${cur?.model || "(provider default)"}`}
+                      ? ui.modelsPage.autoUseMainModel
+                      : `${cur?.provider} · ${cur?.model || ui.modelsPage.providerDefault}`}
                   </div>
                 </div>
                 <Button
@@ -642,7 +674,7 @@ function AuxiliaryTasksModal({
                   onClick={() => setPicker({ kind: "aux", task: t.key })}
                   className="h-6 text-xs uppercase"
                 >
-                  Change
+                  {ui.modelsPage.change}
                 </Button>
               </div>
             );
@@ -654,13 +686,12 @@ function AuxiliaryTasksModal({
             key={`picker-${refreshKey}`}
             loader={api.getModelOptions}
             alwaysGlobal
-            title={`Set Auxiliary: ${
-              AUX_TASKS.find((t) => t.key === picker.task)?.label ??
+            title={ui.modelsPage.setAuxiliaryTitle(
+              localizedAuxTasks.find((t) => t.key === picker.task)?.label ??
               picker.task
-            }`}
-            onApply={async ({ provider, model, confirmExpensiveModel }) => {
-              const result = await api.setModelAssignment({
-                confirm_expensive_model: confirmExpensiveModel,
+            )}
+            onApply={async ({ provider, model }) => {
+              await api.setModelAssignment({
                 scope: "auxiliary",
                 task: picker.task,
                 provider,
@@ -676,10 +707,10 @@ function AuxiliaryTasksModal({
           open={confirmReset}
           onCancel={() => setConfirmReset(false)}
           onConfirm={() => void resetAllAux()}
-          title="Reset auxiliary models"
-          description="Reset every auxiliary task to 'auto'? This overrides any per-task overrides you've set."
+          title={ui.modelsPage.resetAuxTitle}
+          description={ui.modelsPage.resetAuxDescription}
           destructive
-          confirmLabel="Reset all"
+          confirmLabel={ui.modelsPage.resetAll}
           loading={resetBusy}
         />
       </div>
@@ -696,6 +727,7 @@ function ModelSettingsPanel({
   refreshKey: number;
   onSaved(): void;
 }) {
+  const ui = useDashboardUi();
   const [auxModalOpen, setAuxModalOpen] = useState(false);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   const [pendingReloadModel, setPendingReloadModel] = useState<string | null>(
@@ -739,9 +771,9 @@ function ModelSettingsPanel({
       <CardHeader className="min-w-0 pb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <CardTitle className="text-sm">Model Settings</CardTitle>
+          <CardTitle className="text-sm">{ui.modelsPage.settingsTitle}</CardTitle>
           <span className="max-w-full min-w-0 text-xs text-text-secondary [overflow-wrap:anywhere]">
-            applies to new sessions
+            {ui.modelsPage.appliesToNewSessions}
           </span>
         </div>
       </CardHeader>
@@ -753,13 +785,13 @@ function ModelSettingsPanel({
             <div className="flex items-center gap-2 mb-0.5">
               <Star className="h-3 w-3 text-primary" />
               <span className="text-display text-xs font-medium tracking-wider">
-                Main model
+                {ui.modelsPage.mainModel}
               </span>
             </div>
             <div className="text-xs font-mono text-text-secondary truncate">
-              {mainProv || "(unset)"}
+              {mainProv || ui.modelsPage.unset}
               {mainProv && mainModel && " · "}
-              {mainModel || "(unset)"}
+              {mainModel || ui.modelsPage.unset}
             </div>
           </div>
           <Button
@@ -767,7 +799,7 @@ function ModelSettingsPanel({
             onClick={() => setPicker({ kind: "main" })}
             className="shrink-0 self-start text-xs uppercase sm:self-center"
           >
-            Change
+            {ui.modelsPage.change}
           </Button>
         </div>
 
@@ -777,13 +809,11 @@ function ModelSettingsPanel({
             <div className="flex items-center gap-2 mb-0.5">
               <Cpu className="h-3 w-3 text-text-tertiary" />
               <span className="text-display text-xs font-medium tracking-wider">
-                Auxiliary tasks
+                  {ui.modelsPage.auxiliaryTasksTitle}
               </span>
             </div>
             <div className="text-xs font-mono text-text-secondary truncate">
-              {auxOverrideCount > 0
-                ? `${auxOverrideCount} override${auxOverrideCount > 1 ? "s" : ""} · ${AUX_TASKS.length - auxOverrideCount} auto`
-                : `${AUX_TASKS.length} tasks · all auto`}
+                {ui.modelsPage.overridesSummary(auxOverrideCount, AUX_TASKS.length)}
             </div>
           </div>
           <Button
@@ -792,7 +822,7 @@ function ModelSettingsPanel({
             onClick={() => setAuxModalOpen(true)}
             className="shrink-0 self-start text-xs uppercase sm:self-center"
           >
-            Configure
+            {ui.modelsPage.configure}
           </Button>
         </div>
 
@@ -801,10 +831,9 @@ function ModelSettingsPanel({
             key={`picker-${refreshKey}`}
             loader={api.getModelOptions}
             alwaysGlobal
-            title="Set Main Model"
-            onApply={async ({ provider, model, confirmExpensiveModel }) => {
-              const result = await applyAssignment({
-                confirmExpensiveModel,
+            title={ui.modelsPage.setMainModelTitle}
+            onApply={async ({ provider, model }) => {
+              await applyAssignment({
                 scope: "main",
                 task: "",
                 provider,
@@ -853,6 +882,7 @@ export default function ModelsPage() {
   // calls and retries, so they're misleading next to provider billing.
   const [showTokens, setShowTokens] = useState(false);
   const { t } = useI18n();
+  const ui = useDashboardUi();
   const { setAfterTitle, setEnd } = usePageHeader();
 
   useEffect(() => {
@@ -1019,13 +1049,10 @@ export default function ModelsPage() {
               </div>
               {!showTokens && (
                 <p className="mt-4 text-xs text-text-tertiary leading-relaxed">
-                  Token & cost analytics are hidden because the local counts
-                  exclude auxiliary calls (compression, vision, web extract,
-                  …) and provider retries, so they diverge from your provider
-                  bill. Enable{" "}
+                  {ui.modelsPage.tokenAnalyticsHiddenPrefix}{" "}
                   <span className="font-mono">dashboard.show_token_analytics</span>{" "}
-                  in <a href="/config" className="underline">Config</a> to
-                  show the local debug estimate anyway.
+                  in <a href="/config" className="underline">{t.app.nav.config}</a>{" "}
+                  {ui.modelsPage.tokenAnalyticsHiddenSuffix}
                 </p>
               )}
             </CardContent>

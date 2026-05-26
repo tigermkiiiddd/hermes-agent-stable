@@ -7,6 +7,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 
 /**
  * Expandable tool call row — the web equivalent of Ink's ToolTrail node.
@@ -51,6 +52,7 @@ const BULLET_TONE: Record<ToolEntry["status"], string> = {
 const TICK_MS = 500;
 
 export function ToolCall({ tool }: { tool: ToolEntry }) {
+  const ui = useDashboardUi();
   // `open` is derived: errors default-expanded, everything else collapsed.
   // `null` means "follow the default"; any explicit bool is the user's override.
   // This lets a running tool flip to expanded automatically when it errors,
@@ -111,19 +113,19 @@ export function ToolCall({ tool }: { tool: ToolEntry }) {
         {tool.status === "running" && (
           <span
             className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse shrink-0"
-            title="running"
+            title={ui.toolCall.runningTitle}
           />
         )}
         {tool.status === "error" && (
           <AlertCircle
             className="h-3 w-3 shrink-0 text-destructive"
-            aria-label="error"
+            aria-label={ui.toolCall.errorAria}
           />
         )}
         {tool.status === "done" && (
           <Check
             className="h-3 w-3 shrink-0 text-primary/80"
-            aria-label="done"
+            aria-label={ui.toolCall.doneAria}
           />
         )}
 
@@ -136,17 +138,19 @@ export function ToolCall({ tool }: { tool: ToolEntry }) {
 
       {open && hasBody && (
         <div className="border-t border-border/60 px-3 py-2 space-y-2 text-xs font-mono">
-          {tool.context && <Section label="context">{tool.context}</Section>}
+          {tool.context && (
+            <Section label={ui.toolCall.sections.context}>{tool.context}</Section>
+          )}
 
           {tool.preview && tool.status === "running" && (
-            <Section label="streaming">
+            <Section label={ui.toolCall.sections.streaming}>
               {tool.preview}
               <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
             </Section>
           )}
 
           {tool.inline_diff && (
-            <Section label="diff">
+            <Section label={ui.toolCall.sections.diff}>
               <pre className="whitespace-pre overflow-x-auto text-[0.7rem] leading-snug">
                 {colorizeDiff(tool.inline_diff)}
               </pre>
@@ -154,7 +158,7 @@ export function ToolCall({ tool }: { tool: ToolEntry }) {
           )}
 
           {tool.summary && (
-            <Section label="result">
+            <Section label={ui.toolCall.sections.result}>
               <span className="text-foreground/90 whitespace-pre-wrap">
                 {tool.summary}
               </span>
@@ -162,7 +166,7 @@ export function ToolCall({ tool }: { tool: ToolEntry }) {
           )}
 
           {tool.error && (
-            <Section label="error" tone="error">
+            <Section label={ui.toolCall.sections.error} tone="error">
               <span className="text-destructive whitespace-pre-wrap">
                 {tool.error}
               </span>

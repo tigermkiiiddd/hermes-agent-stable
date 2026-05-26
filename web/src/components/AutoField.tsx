@@ -4,16 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/i18n";
 import {
+  getConfigSelectOptions,
   localizeConfigFieldDescription,
   localizeConfigFieldLabel,
   localizeConfigListItemLabel,
   localizeConfigListPlaceholder,
+  localizeConfigSchemaKeyHint,
+  localizeConfigScalarValue,
   localizeConfigSelectOption,
 } from "@/lib/configLocalization";
 
 function FieldHint({ schema, schemaKey }: { schema: Record<string, unknown>; schemaKey: string }) {
   const { locale } = useI18n();
-  const keyPath = schemaKey.includes(".") ? schemaKey : "";
+  const keyPath = localizeConfigSchemaKeyHint(schemaKey, locale);
   const description = localizeConfigFieldDescription(schemaKey, schema, locale);
 
   if (!keyPath && !description) return null;
@@ -127,8 +130,16 @@ export function AutoField({
     );
   }
 
-  if (schema.type === "select") {
-    const options = (schema.options as string[]) ?? [];
+  const inferredOptions =
+    schema.type === "select"
+      ? ((schema.options as string[]) ?? [])
+      : getConfigSelectOptions(schemaKey) ?? [];
+
+  if (schema.type === "select" || inferredOptions.length > 0) {
+    const options =
+      schema.type === "select"
+        ? ((schema.options as string[]) ?? [])
+        : inferredOptions;
     return (
       <div className="grid gap-1.5">
         <Label className="text-sm">{label}</Label>
@@ -203,11 +214,19 @@ export function AutoField({
     );
   }
 
+  const localizedValue = localizeConfigScalarValue(schemaKey, value, locale);
+  const rawValue = String(value ?? "");
+
   return (
     <div className="grid gap-1.5">
       <Label className="text-sm">{label}</Label>
       <FieldHint schema={schema} schemaKey={schemaKey} />
-      <Input value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
+      <Input value={rawValue} onChange={(e) => onChange(e.target.value)} />
+      {localizedValue && localizedValue !== rawValue && (
+        <span className="text-xs text-text-secondary">
+          {localizedValue}
+        </span>
+      )}
     </div>
   );
 }

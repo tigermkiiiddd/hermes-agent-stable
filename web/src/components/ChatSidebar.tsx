@@ -38,7 +38,9 @@ import { titleFromSessionInfoPayload } from "@/lib/chat-title";
 
 import { cn } from "@/lib/utils";
 import { AlertCircle, ChevronDown, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/i18n";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 
 interface SessionInfo {
   cwd?: string;
@@ -54,14 +56,6 @@ interface RpcEnvelope {
 }
 
 const TOOL_LIMIT = 20;
-
-const STATE_LABEL: Record<ConnectionState, string> = {
-  idle: "idle",
-  connecting: "connecting",
-  open: "live",
-  closed: "closed",
-  error: "error",
-};
 
 const STATE_TONE: Record<
   ConnectionState,
@@ -89,14 +83,9 @@ interface ChatSidebarProps {
   showTools?: boolean;
 }
 
-export function ChatSidebar({
-  channel,
-  profile,
-  className,
-  onDashboardNewSessionRequest,
-  onSessionTitleChange,
-  showTools = true,
-}: ChatSidebarProps) {
+export function ChatSidebar({ channel, className }: ChatSidebarProps) {
+  const { t } = useI18n();
+  const ui = useDashboardUi();
   // `version` bumps on reconnect; gw is derived so we never call setState
   // for it inside an effect (React 19's set-state-in-effect rule). The
   // counter is the dependency on purpose — it's not read in the memo body,
@@ -235,16 +224,36 @@ export function ChatSidebar({
     if (!channel) {
       return;
     }
-    // In loopback mode the legacy ?token=<session> path is fine; in gated
-    // mode we have to mint a single-use ticket from the cookie. The IIFE
-    // keeps the outer effect synchronous so its ``return cleanup`` stays
-    // at the top level; the local ``ws`` is hoisted to a closed-over
-    // binding the cleanup reads via ``wsRef``.
+
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const qs = new URLSearchParams({ token, channel });
+    const ws = new WebSocket(
+      `${proto}//${window.location.host}${HERMES_BASE_PATH}/api/events?${qs.toString()}`,
+    );
+
+    // `unmounting` suppresses the banner during cleanup — `ws.close()`
+    // from the effect's return fires a close event with code 1005 that
+    // would otherwise look like an unexpected drop.
+    const DISCONNECTED = ui.sidebar.eventsDisconnected;
     let unmounting = false;
-    let ws: WebSocket | null = null;
-    void (async () => {
-      const [authName, authValue] = await buildWsAuthParam();
-      if (!authValue || unmounting) {
+    const surface = (msg: string) => !unmounting && setError(msg);
+
+    ws.addEventListener("error", () => surface(DISCONNECTED));
+
+    ws.addEventListener("close", (ev) => {
+      if (ev.code === 4401 || ev.code === 4403) {
+        surface(ui.sidebar.eventsRejected(ev.code));
+      } else if (ev.code !== 1000) {
+        surface(DISCONNECTED);
+      }
+    });
+
+    ws.addEventListener("message", (ev) => {
+      let frame: RpcEnvelope;
+
+      try {
+        frame = JSON.parse(ev.data);
+      } catch {
         return;
       }
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -278,7 +287,26 @@ export function ChatSidebar({
           return;
         }
 
-        if (frame.method !== "event" || !frame.params) {
+        setTools((prev) =>
+          [
+            ...prev,
+            {
+              kind: "tool" as const,
+              id: `tool-${toolId}-${prev.length}`,
+              tool_id: toolId,
+              name: p?.name ?? ui.sidebar.toolDefaultName,
+              context: p?.context,
+              status: "running" as const,
+              startedAt: Date.now(),
+            },
+          ].slice(-TOOL_LIMIT),
+        );
+      } else if (type === "tool.progress") {
+        const p = payload as
+          | { name?: string; preview?: string }
+          | undefined;
+
+        if (!p?.name || !p.preview) {
           return;
         }
 
@@ -367,13 +395,7 @@ export function ChatSidebar({
       unmounting = true;
       ws?.close();
     };
-  }, [channel, onDashboardNewSessionRequest, onSessionTitleChange, version]);
-
-  // Seed the badge on mount and re-read it whenever the sockets are rebuilt
-  // (a profile/channel switch bumps `version`).
-  useEffect(() => {
-    refreshEffectiveModel();
-  }, [refreshEffectiveModel, version]);
+  }, [channel, ui.sidebar.eventsDisconnected, ui.sidebar, version]);
 
   const reconnect = useCallback(() => {
     setError(null);
@@ -399,19 +421,20 @@ export function ChatSidebar({
       <Card className="flex items-center justify-between gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <div className="text-display text-xs tracking-wider text-text-tertiary">
-            model
+            {ui.sidebar.modelLabel}
           </div>
 
           <Button
             ghost
             size="sm"
             onClick={() => setModelOpen(true)}
-            className={cn(
-              "max-w-full min-w-0 px-0 py-0",
-              "self-start normal-case tracking-normal text-sm font-medium",
-              "hover:underline disabled:no-underline",
-            )}
-            title={modelName === "—" ? "switch model" : modelName}
+            suffix={
+              canPickModel ? (
+                <ChevronDown className="text-text-secondary" />
+              ) : undefined
+            }
+            className="self-start min-w-0 px-0 py-0 normal-case tracking-normal text-sm font-medium hover:underline disabled:no-underline"
+            title={info.model ?? ui.sidebar.switchModel}
           >
             <span className="flex min-w-0 max-w-full items-center gap-1">
               <span className="truncate">{modelLabel}</span>
@@ -421,9 +444,7 @@ export function ChatSidebar({
           </Button>
         </div>
 
-        <Badge tone={STATE_TONE[state]} className="shrink-0">
-          {STATE_LABEL[state]}
-        </Badge>
+        <Badge tone={STATE_TONE[state]}>{ui.sidebar.stateLabels[state]}</Badge>
       </Card>
 
       {supportsReasoning && (
@@ -465,30 +486,28 @@ export function ChatSidebar({
                 onClick={reconnect}
                 prefix={<RefreshCw />}
               >
-                reconnect
+                {ui.sidebar.reconnect}
               </Button>
             )}
           </div>
         </Card>
       )}
 
-      {showTools && (
-        <Card className="flex min-h-0 flex-none flex-col px-2 py-2">
-          <div className="text-display px-1 pb-2 text-xs tracking-wider text-text-tertiary">
-            tools
-          </div>
+      <Card className="flex min-h-0 flex-none flex-col px-2 py-2">
+        <div className="text-display px-1 pb-2 text-xs tracking-wider text-text-tertiary">
+          {ui.sidebar.toolsLabel}
+        </div>
 
-          <div className="flex min-h-0 flex-col gap-1.5">
-            {tools.length === 0 ? (
-              <div className="px-2 py-4 text-center text-xs text-text-secondary">
-                no tool calls yet
-              </div>
-            ) : (
-              tools.map((t) => <ToolCall key={t.id} tool={t} />)
-            )}
-          </div>
-        </Card>
-      )}
+        <div className="flex min-h-0 flex-col gap-1.5">
+          {tools.length === 0 ? (
+            <div className="px-2 py-4 text-center text-xs text-text-secondary">
+              {ui.sidebar.noToolCallsYet}
+            </div>
+          ) : (
+            tools.map((t) => <ToolCall key={t.id} tool={t} />)
+          )}
+        </div>
+      </Card>
 
       {modelOpen && (
         <ModelPickerDialog

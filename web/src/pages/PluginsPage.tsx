@@ -17,6 +17,7 @@ import { Label } from "@nous-research/ui/ui/components/label";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Toast } from "@nous-research/ui/ui/components/toast";
 import { useI18n } from "@/i18n";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 import { PluginSlot } from "@/plugins";
 import { cn } from "@/lib/utils";
 import { usePageHeader } from "@/contexts/usePageHeader";
@@ -39,6 +40,7 @@ export default function PluginsPage() {
 
   const { toast, showToast } = useToast();
   const { t } = useI18n();
+  const ui = useDashboardUi();
   const { setAfterTitle } = usePageHeader();
 
   const loadHub = useCallback(() => {
@@ -87,14 +89,17 @@ export default function PluginsPage() {
         force: installForce,
         enable: installEnable,
       });
-      showToast(`${r.plugin_name ?? id} installed`, "success");
+      showToast(ui.pluginsPage.installed(r.plugin_name ?? id), "success");
       if ((r.warnings?.length ?? 0) > 0) showToast(r.warnings!.join(" "), "error");
       if ((r.missing_env?.length ?? 0) > 0)
         showToast(`${t.pluginsPage.missingEnvWarn} ${r.missing_env!.join(", ")}`, "error");
       setInstallId("");
       await loadHub();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Install failed", "error");
+      showToast(
+        e instanceof Error ? e.message : ui.pluginsPage.installFailed,
+        "error",
+      );
     } finally {
       setInstallBusy(false);
     }
@@ -110,7 +115,10 @@ export default function PluginsPage() {
       );
       await loadHub();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Rescan failed", "error");
+      showToast(
+        e instanceof Error ? e.message : ui.pluginsPage.rescanFailed,
+        "error",
+      );
     } finally {
       setRescanBusy(false);
     }
@@ -127,7 +135,10 @@ export default function PluginsPage() {
       showToast(t.pluginsPage.savedProviders, "success");
       await loadHub();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Save failed", "error");
+      showToast(
+        e instanceof Error ? e.message : ui.pluginsPage.saveFailed,
+        "error",
+      );
     } finally {
       setProviderBusy(false);
     }
@@ -139,7 +150,10 @@ export default function PluginsPage() {
       await fn();
       await loadHub();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Failed", "error");
+      showToast(
+        e instanceof Error ? e.message : ui.pluginsPage.actionFailed,
+        "error",
+      );
     } finally {
       setRowBusy(null);
     }
@@ -240,7 +254,7 @@ export default function PluginsPage() {
               <Input
                 className="font-mono-ui lowercase"
                 id="install-url"
-                placeholder="owner/repo, owner/repo/subdir, or https://..."
+                placeholder={ui.pluginsPage.installPlaceholder}
                 spellCheck={false}
                 value={installId}
                 onChange={(e) => setInstallId(e.target.value)}
@@ -381,6 +395,7 @@ interface PluginRowCardProps {
 }
 
 function PluginRowCard(props: PluginRowCardProps) {
+  const ui = useDashboardUi();
   const {
     row,
     rowBusy,
@@ -402,6 +417,7 @@ function PluginRowCard(props: PluginRowCardProps) {
       : row.runtime_status === "disabled"
         ? "destructive"
         : "outline";
+  const metaBadgeClass = "!font-sans tracking-[0.06em] leading-tight";
 
   return (
 
@@ -417,16 +433,22 @@ function PluginRowCard(props: PluginRowCardProps) {
 
             <span className="truncate font-semibold">{row.name}</span>
 
-            <Badge tone="outline">
+            <Badge tone="outline" className={metaBadgeClass}>
               {t.pluginsPage.sourceBadge}: {row.source}
             </Badge>
 
-            <Badge tone="outline">v{row.version || "—"}</Badge>
+            <Badge tone="outline" className={metaBadgeClass}>
+              v{row.version || "—"}
+            </Badge>
 
-            <Badge tone={badgeTone}>{row.runtime_status}</Badge>
+            <Badge tone={badgeTone} className={metaBadgeClass}>
+              {row.runtime_status}
+            </Badge>
 
             {row.auth_required ? (
-              <Badge tone="destructive">{t.pluginsPage.authRequired}</Badge>
+              <Badge tone="destructive" className={metaBadgeClass}>
+                {t.pluginsPage.authRequired}
+              </Badge>
             ) : null}
           </div>
 
@@ -567,11 +589,11 @@ function PluginRowCard(props: PluginRowCardProps) {
           setConfirmRemove(false);
           void setRuntimeLoading(row.name, async () => {
             await api.removeAgentPlugin(row.name);
-            showToast(`${row.name} removed`, "success");
+            showToast(ui.pluginsPage.removed(row.name), "success");
           });
         }}
         title={t.pluginsPage.removeConfirm}
-        description={`This will remove the "${row.name}" plugin from your agent.`}
+        description={ui.pluginsPage.removeDescription(row.name)}
         destructive
         confirmLabel={t.common.delete}
       />

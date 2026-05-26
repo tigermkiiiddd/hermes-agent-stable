@@ -7,6 +7,7 @@ import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api, type OAuthProvider, type OAuthStartResponse } from "@/lib/api";
 import { Input } from "@nous-research/ui/ui/components/input";
 import { useI18n } from "@/i18n";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 import { cn, themedBody } from "@/lib/utils";
 
 interface Props {
@@ -34,6 +35,7 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
   const isMounted = useRef(true);
   const pollTimer = useRef<number | null>(null);
   const { t } = useI18n();
+  const ui = useDashboardUi();
 
   // Initiate flow on mount
   useEffect(() => {
@@ -54,7 +56,7 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
       .catch((e) => {
         if (!isMounted.current) return;
         setPhase("error");
-        setErrorMsg(`Failed to start login: ${e}`);
+        setErrorMsg(ui.oauth.failedToStartLogin(String(e)));
       });
     return () => {
       isMounted.current = false;
@@ -104,7 +106,7 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
       } catch (e) {
         if (!isMounted.current) return;
         setPhase("error");
-        setErrorMsg(`Polling failed: ${e}`);
+          setErrorMsg(ui.oauth.pollingFailed(String(e)));
         if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
       }
     }, 2000);
@@ -127,16 +129,16 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
       if (!isMounted.current) return;
       if (resp.ok && resp.status === "approved") {
         setPhase("approved");
-        onSuccess(`${provider.name} connected`);
+        onSuccess(ui.oauth.connected(provider.name));
         window.setTimeout(() => isMounted.current && onClose(), 1500);
       } else {
         setPhase("error");
-        setErrorMsg(resp.message || "Token exchange failed");
+        setErrorMsg(resp.message || ui.oauth.tokenExchangeFailed);
       }
     } catch (e) {
       if (!isMounted.current) return;
       setPhase("error");
-      setErrorMsg(`Submit failed: ${e}`);
+      setErrorMsg(ui.oauth.submitFailed(String(e)));
     }
   };
 
