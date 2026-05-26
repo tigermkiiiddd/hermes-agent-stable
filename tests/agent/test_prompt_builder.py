@@ -1193,5 +1193,3 @@ class TestOpenAIModelExecutionGuidance:
 # Budget warning history stripping
 # =========================================================================
 
-
-
