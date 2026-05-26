@@ -1,7 +1,13 @@
 ---
-title: "Kanban Codex Lane"
-sidebar_label: "Kanban Codex Lane"
-description: "Use when a Hermes Kanban worker wants to run Codex CLI as an isolated implementation lane while Hermes keeps ownership of task lifecycle, reconciliation, tes..."
+name: kanban-codex-lane
+description: "Hermes Kanban worker 运行 Codex CLI 的工作流"
+version: 1.0.0
+author: Hermes Agent
+license: MIT
+metadata:
+  hermes:
+    tags: [kanban, codex, worktrees, autonomous-agents, prediction-market-bot]
+    related_skills: [kanban-worker, codex, hermes-agent]
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}

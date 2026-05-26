@@ -1,67 +1,17 @@
 ---
-name: plan
-description: "计划模式：将 markdown 计划写入 .hermes/plans/，不执行"
-version: 1.0.0
-author: Hermes Agent
+name: writing-plans
+description: "编写实现计划：可咀嚼的任务、路径、代码"
+version: 1.1.0
+author: Hermes Agent (adapted from obra/superpowers)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [planning, plan-mode, implementation, workflow, design, documentation]
+    tags: [planning, design, implementation, workflow, documentation]
     related_skills: [subagent-driven-development, test-driven-development, requesting-code-review]
 ---
 
-# Plan Mode
-
-Use this skill when the user wants a plan instead of execution.
-
-## Core behavior
-
-For this turn, you are planning only.
-
-- Do not implement code.
-- Do not edit project files except the plan markdown file.
-- Do not run mutating terminal commands, commit, push, or perform external actions.
-- You may inspect the repo or other context with read-only commands/tools when needed.
-- Your deliverable is a markdown plan saved inside the active workspace under `.hermes/plans/`.
-
-## Output requirements
-
-Write a markdown plan that is concrete and actionable.
-
-Include, when relevant:
-- Goal
-- Current context / assumptions
-- Proposed approach
-- Step-by-step plan
-- Files likely to change
-- Tests / validation
-- Risks, tradeoffs, and open questions
-
-If the task is code-related, include exact file paths, likely test targets, and verification steps.
-
-## Save location
-
-Save the plan with `write_file` under:
-- `.hermes/plans/YYYY-MM-DD_HHMMSS-<slug>.md`
-
-Treat that as relative to the active working directory / backend workspace. Hermes file tools are backend-aware, so using this relative path keeps the plan with the workspace on local, docker, ssh, modal, and daytona backends.
-
-If the runtime provides a specific target path, use that exact path.
-If not, create a sensible timestamped filename yourself under `.hermes/plans/`.
-
-## Interaction style
-
-- If the request is clear enough, write the plan directly.
-- If no explicit instruction accompanies `/plan`, infer the task from the current conversation context.
-- If it is genuinely underspecified, ask a brief clarifying question instead of guessing.
-- After saving the plan, reply briefly with what you planned and the saved path.
-
----
-
-# Writing the Plan Well
-
-The rest of this skill is the craft of authoring a *good* implementation plan — the content that goes inside the markdown file above.
+# Writing Implementation Plans
 
 ## Overview
 
@@ -71,7 +21,7 @@ Assume the implementer is a skilled developer but knows almost nothing about the
 
 **Core principle:** A good plan makes implementation obvious. If someone has to guess, the plan is incomplete.
 
-## When a Full Implementation Plan Helps
+## When to Use
 
 **Always use before:**
 - Implementing multi-step features
@@ -242,6 +192,15 @@ Check:
 - [ ] Commands are exact with expected output
 - [ ] No missing context
 - [ ] DRY, YAGNI, TDD principles applied
+
+### Step 7: Save the Plan
+
+```bash
+mkdir -p docs/plans
+# Save plan to docs/plans/YYYY-MM-DD-feature-name.md
+git add docs/plans/
+git commit -m "docs: add implementation plan for [feature]"
+```
 
 ## Principles
 

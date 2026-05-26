@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description: "4-phase root cause debugging: understand bugs before fixing."
+description: "4 阶段根本原因调试：在修复前理解 bug"
 version: 1.1.0
 author: Hermes Agent (adapted from obra/superpowers)
 license: MIT
