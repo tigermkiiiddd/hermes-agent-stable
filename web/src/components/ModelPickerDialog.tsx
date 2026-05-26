@@ -9,6 +9,8 @@ import { Check, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn, themedBody } from "@/lib/utils";
+import { useI18n } from "@/i18n";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 
 /**
  * Two-stage model picker modal.
@@ -74,10 +76,13 @@ export function ModelPickerDialog(props: Props) {
     loader,
     onApply,
     onClose,
-    title = "Switch Model",
+    title,
     alwaysGlobal = false,
   } = props;
+  const { t } = useI18n();
+  const ui = useDashboardUi();
   const standalone = !!loader && !!onApply;
+  const resolvedTitle = title ?? ui.modelPicker.defaultTitle;
 
   const [providers, setProviders] = useState<ModelOptionProvider[]>([]);
   const [currentModel, setCurrentModel] = useState("");
@@ -219,7 +224,7 @@ export function ModelPickerDialog(props: Props) {
           size="icon"
           onClick={onClose}
           className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-          aria-label="Close"
+          aria-label={t.common.close}
         >
           <X />
         </Button>
@@ -229,10 +234,10 @@ export function ModelPickerDialog(props: Props) {
             id="model-picker-title"
             className="font-mondwest text-display text-base tracking-wider"
           >
-            {title}
+            {resolvedTitle}
           </h2>
           <p className="text-xs text-muted-foreground mt-1 font-mono">
-            current: {currentModel || "(unknown)"}
+            {ui.modelPicker.currentLabel}: {currentModel || ui.modelPicker.unknownCurrent}
             {currentProviderSlug && ` · ${currentProviderSlug}`}
           </p>
         </header>
@@ -242,7 +247,7 @@ export function ModelPickerDialog(props: Props) {
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               autoFocus
-              placeholder="Filter providers and models…"
+              placeholder={ui.modelPicker.filterPlaceholder}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-7 h-8 text-sm"
@@ -283,7 +288,7 @@ export function ModelPickerDialog(props: Props) {
         <footer className="border-t border-border p-3 flex items-center justify-between gap-3 flex-wrap">
           {alwaysGlobal ? (
             <span className="text-xs text-muted-foreground">
-              Saves to config.yaml — applies to new sessions.
+              {ui.modelPicker.savesToConfig}
             </span>
           ) : (
             <div className="flex items-center gap-2">
@@ -299,17 +304,17 @@ export function ModelPickerDialog(props: Props) {
                 className="font-mondwest normal-case tracking-normal text-xs text-muted-foreground cursor-pointer"
                 htmlFor="model-picker-persist-global"
               >
-                Persist globally (otherwise this session only)
+                {ui.modelPicker.persistGlobal}
               </Label>
             </div>
           )}
 
           <div className="flex items-center gap-2 ml-auto">
             <Button outlined onClick={onClose} disabled={applying}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button onClick={confirm} disabled={!canConfirm}>
-              {applying ? <Spinner /> : "Switch"}
+              {applying ? <Spinner /> : ui.modelPicker.switchAction}
             </Button>
           </div>
         </footer>
@@ -340,11 +345,12 @@ function ProviderColumn({
   query: string;
   onSelect(slug: string): void;
 }) {
+  const ui = useDashboardUi();
   return (
     <div className="border-r border-border overflow-y-auto">
       {loading && (
         <div className="flex items-center gap-2 p-4 text-xs text-muted-foreground">
-          <Spinner className="text-xs" /> loading…
+          <Spinner className="text-xs" /> {ui.modelPicker.loading}
         </div>
       )}
 
@@ -353,10 +359,10 @@ function ProviderColumn({
       {!loading && !error && providers.length === 0 && (
         <div className="p-4 text-xs text-muted-foreground italic">
           {query
-            ? "no matches"
+            ? ui.modelPicker.noMatches
             : total === 0
-              ? "no authenticated providers"
-              : "no matches"}
+              ? ui.modelPicker.noAuthenticatedProviders
+              : ui.modelPicker.noMatches}
         </div>
       )}
 
@@ -377,7 +383,10 @@ function ProviderColumn({
                 {p.is_current && <CurrentTag />}
               </div>
               <div className="text-xs text-text-secondary font-mono truncate">
-                {p.slug} · {p.total_models ?? p.models?.length ?? 0} models
+                {p.slug} ·{" "}
+                {ui.modelPicker.modelsCount(
+                  p.total_models ?? p.models?.length ?? 0,
+                )}
               </div>
             </div>
           </ListItem>
@@ -410,11 +419,12 @@ function ModelColumn({
   onSelect(model: string): void;
   onConfirm(model: string): void;
 }) {
+  const ui = useDashboardUi();
   if (!provider) {
     return (
       <div className="overflow-y-auto">
         <div className="p-4 text-xs text-muted-foreground italic">
-          pick a provider →
+          {ui.modelPicker.pickProvider}
         </div>
       </div>
     );
@@ -431,8 +441,8 @@ function ModelColumn({
       {models.length === 0 ? (
         <div className="p-4 text-xs text-muted-foreground italic">
           {allModels.length
-            ? "no models match your filter"
-            : "no models listed for this provider"}
+            ? ui.modelPicker.noModelsMatch
+            : ui.modelPicker.noModelsListed}
         </div>
       ) : (
         models.map((m) => {
@@ -462,9 +472,10 @@ function ModelColumn({
 }
 
 function CurrentTag() {
+  const ui = useDashboardUi();
   return (
     <span className="text-display text-xs tracking-wider text-primary shrink-0">
-      current
+      {ui.modelPicker.currentTag}
     </span>
   );
 }
