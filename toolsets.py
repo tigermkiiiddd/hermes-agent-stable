@@ -257,14 +257,17 @@ TOOLSETS = {
             "set). The dispatcher runs inside the gateway by default; see "
             "`kanban.dispatch_in_gateway` in config.yaml. Lets workers mark "
             "tasks done with structured handoffs, block for human input, "
-            "heartbeat during long ops, comment on threads, and (for "
-            "orchestrators) list, unblock, and fan out tasks."
+            "heartbeat during long ops, comment on threads, async meetings "
+            "(meeting_create/join/speak/advance/close), and (for orchestrators) "
+            "list, unblock, and fan out tasks."
         ),
         "tools": [
             "kanban_show", "kanban_list", "kanban_complete", "kanban_block",
             "kanban_heartbeat", "kanban_comment",
             "kanban_create", "kanban_link",
             "kanban_unblock",
+            "meeting_create", "meeting_join", "meeting_invite", "meeting_speak",
+            "meeting_show", "meeting_advance", "meeting_close",
         ],
         "includes": [],
     },

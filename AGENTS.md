@@ -465,6 +465,10 @@ npm run fmt       # prettier
 npm test          # vitest
 ```
 
+### Web dashboard SPA (`web/` → `hermes_cli/web_dist/`)
+
+Runtime bundle: `hermes_cli/web_dist/` (not `web/src/`). See `web/README.md`.
+
 ### TUI in the Dashboard (`hermes dashboard` → `/chat`)
 
 The dashboard embeds the real `hermes --tui` — **not** a rewrite.  See `hermes_cli/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in `hermes_cli/web_server.py`.

@@ -657,6 +657,42 @@ export const api = {
         body: JSON.stringify({ content }),
       },
     ),
+  getProfileSettings: (name: string) =>
+    fetchJSON<ProfileSettings>(
+      `/api/profiles/${encodeURIComponent(name)}/settings`,
+    ),
+  setProfileModel: (name: string, provider: string, model: string) =>
+    fetchJSON<{ ok: boolean; provider: string; model: string }>(
+      `/api/profiles/${encodeURIComponent(name)}/model`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, model }),
+      },
+    ),
+  toggleProfileSkill: (name: string, skillName: string, enabled: boolean) =>
+    fetchJSON<{ ok: boolean }>(
+      `/api/profiles/${encodeURIComponent(name)}/skills/toggle`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: skillName, enabled }),
+      },
+    ),
+  addProfileSkill: (profileName: string, skillName: string) =>
+    fetchJSON<{ ok: boolean }>(
+      `/api/profiles/${encodeURIComponent(profileName)}/skills/add`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: skillName }),
+      },
+    ),
+  removeProfileSkill: (profileName: string, skillName: string) =>
+    fetchJSON<{ ok: boolean }>(
+      `/api/profiles/${encodeURIComponent(profileName)}/skills/${encodeURIComponent(skillName)}`,
+      { method: "DELETE" },
+    ),
 
   // Skills & Toolsets
   //
@@ -1845,6 +1881,24 @@ export interface ProfileInfo {
   distribution_version: string | null;
   distribution_source: string | null;
   has_alias: boolean;
+}
+
+export interface ProfileSkillEntry {
+  name: string;
+  description: string;
+  category: string | null;
+  enabled?: boolean;
+}
+
+export interface ProfileSettings {
+  model: string;
+  provider: string;
+  /** @deprecated use skills_assigned */
+  skills: ProfileSkillEntry[];
+  skills_assigned: ProfileSkillEntry[];
+  skills_available: ProfileSkillEntry[];
+  /** True when this profile's skills/ tree is the default library (~/.hermes/skills). */
+  profile_uses_shared_library?: boolean;
 }
 
 export interface ModelsAnalyticsModelEntry {

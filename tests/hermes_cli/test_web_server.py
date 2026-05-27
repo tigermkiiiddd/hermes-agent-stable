@@ -4,7 +4,7 @@ import asyncio
 import os
 import json
 import shutil
-import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
@@ -3263,131 +3263,114 @@ class TestNewEndpoints:
         resp = self.client.get("/api/profiles/nonexistent/soul")
         assert resp.status_code == 404
 
-    # --- New profiles endpoints: active / description / model / describe-auto ---
-
-    def test_profiles_active_defaults(self):
-        from hermes_constants import get_hermes_home
-        get_hermes_home().mkdir(parents=True, exist_ok=True)
-
-        resp = self.client.get("/api/profiles/active")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["active"] == "default"
-        assert data["current"] == "default"
-
-    def test_profiles_set_active_round_trip(self, monkeypatch):
-        import hermes_cli.profiles as profiles_mod
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
-
-        self.client.post("/api/profiles", json={"name": "router"})
-
-        resp = self.client.post("/api/profiles/active", json={"name": "router"})
-        assert resp.status_code == 200
-        assert resp.json()["active"] == "router"
-        assert self.client.get("/api/profiles/active").json()["active"] == "router"
-
-    def test_profiles_set_active_unknown_404(self):
-        resp = self.client.post("/api/profiles/active", json={"name": "ghost"})
-        assert resp.status_code == 404
-
-    def test_profile_description_round_trip(self, monkeypatch):
-        import hermes_cli.profiles as profiles_mod
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
-
-        self.client.post("/api/profiles", json={"name": "desc-prof"})
-
-        put = self.client.put(
-            "/api/profiles/desc-prof/description",
-            json={"description": "Handles code review"},
-        )
-        assert put.status_code == 200
-        body = put.json()
-        assert body["description"] == "Handles code review"
-        assert body["description_auto"] is False
-
-        profiles = {p["name"]: p for p in self.client.get("/api/profiles").json()["profiles"]}
-        assert profiles["desc-prof"]["description"] == "Handles code review"
-        assert profiles["desc-prof"]["description_auto"] is False
-
-    def test_profile_description_unknown_404(self):
-        resp = self.client.put(
-            "/api/profiles/nope/description", json={"description": "x"}
-        )
-        assert resp.status_code == 404
-
-    def test_profile_model_round_trip(self, monkeypatch):
+    def test_profile_settings_model_and_skills(self, monkeypatch):
         from hermes_constants import get_hermes_home
         import hermes_cli.profiles as profiles_mod
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "model-prof"})
-
-        resp = self.client.put(
-            "/api/profiles/model-prof/model",
-            json={"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
+        monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
+        home = get_hermes_home()
+        prof_dir = home / "profiles" / "cfg-prof"
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        (prof_dir / "config.yaml").write_text(
+            "model:\n  provider: openrouter\n  default: anthropic/claude-sonnet-4.6\n"
+            "skills:\n  disabled: [demo-off]\n",
+            encoding="utf-8",
         )
-        assert resp.status_code == 200
-        assert resp.json()["provider"] == "openrouter"
+        skill_dir = prof_dir / "skills" / "demo-on"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: demo-on\ndescription: enabled skill\n---\n",
+            encoding="utf-8",
+        )
+        off_dir = prof_dir / "skills" / "demo-off"
+        off_dir.mkdir(parents=True)
+        (off_dir / "SKILL.md").write_text(
+            "---\nname: demo-off\ndescription: disabled skill\n---\n",
+            encoding="utf-8",
+        )
 
-        import yaml
-        cfg_path = get_hermes_home() / "profiles" / "model-prof" / "config.yaml"
-        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-        assert cfg["model"]["provider"] == "openrouter"
-        assert cfg["model"]["default"] == "anthropic/claude-sonnet-4.6"
+        settings = self.client.get("/api/profiles/cfg-prof/settings")
+        assert settings.status_code == 200
+        body = settings.json()
+        assert body["provider"] == "openrouter"
+        assert body["model"] == "anthropic/claude-sonnet-4.6"
+        by_name = {s["name"]: s for s in body["skills"]}
+        assert by_name["demo-on"]["enabled"] is True
+        assert by_name["demo-off"]["enabled"] is False
 
-    def test_profile_model_requires_provider_and_model(self, monkeypatch):
+        updated = self.client.put(
+            "/api/profiles/cfg-prof/model",
+            json={"provider": "anthropic", "model": "claude-opus-4-6"},
+        )
+        assert updated.status_code == 200
+        reread = self.client.get("/api/profiles/cfg-prof/settings").json()
+        assert reread["provider"] == "anthropic"
+        assert reread["model"] == "claude-opus-4-6"
+
+        toggled = self.client.put(
+            "/api/profiles/cfg-prof/skills/toggle",
+            json={"name": "demo-off", "enabled": True},
+        )
+        assert toggled.status_code == 200
+        after_toggle = self.client.get("/api/profiles/cfg-prof/settings").json()
+        assert {s["name"]: s["enabled"] for s in after_toggle["skills"]}[
+            "demo-off"
+        ] is True
+
+        shutil.rmtree(prof_dir)
+
+    def test_profile_skills_add_and_remove_from_library(self, monkeypatch):
+        from hermes_constants import get_hermes_home
         import hermes_cli.profiles as profiles_mod
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "model-prof2"})
-        resp = self.client.put(
-            "/api/profiles/model-prof2/model",
-            json={"provider": "", "model": ""},
-        )
-        assert resp.status_code == 400
-
-    def test_profile_describe_auto_success(self, monkeypatch):
-        import hermes_cli.profiles as profiles_mod
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
-
-        self.client.post("/api/profiles", json={"name": "auto-prof"})
-
-        from hermes_cli import profile_describer
-        monkeypatch.setattr(
-            profile_describer,
-            "describe_profile",
-            lambda name, overwrite=False: profile_describer.DescribeOutcome(
-                name, True, "described", description="Generated blurb"
-            ),
+        monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
+        home = get_hermes_home()
+        library_skill = home / "skills" / "lib-only"
+        library_skill.mkdir(parents=True)
+        (library_skill / "SKILL.md").write_text(
+            "---\nname: lib-only\ndescription: library skill\n---\n",
+            encoding="utf-8",
         )
 
-        resp = self.client.post("/api/profiles/auto-prof/describe-auto", json={})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["description"] == "Generated blurb"
-        assert body["description_auto"] is True
-
-    def test_profile_describe_auto_failure_is_not_auto(self, monkeypatch):
-        import hermes_cli.profiles as profiles_mod
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
-
-        self.client.post("/api/profiles", json={"name": "auto-fail"})
-
-        from hermes_cli import profile_describer
-        monkeypatch.setattr(
-            profile_describer,
-            "describe_profile",
-            lambda name, overwrite=False: profile_describer.DescribeOutcome(
-                name, False, "no aux client", description=None
-            ),
+        prof_dir = home / "profiles" / "skill-roster"
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        (prof_dir / "config.yaml").write_text("model:\n  provider: openrouter\n", encoding="utf-8")
+        on_dir = prof_dir / "skills" / "on-profile"
+        on_dir.mkdir(parents=True)
+        (on_dir / "SKILL.md").write_text(
+            "---\nname: on-profile\ndescription: already assigned\n---\n",
+            encoding="utf-8",
         )
 
-        resp = self.client.post("/api/profiles/auto-fail/describe-auto", json={})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is False
-        assert body["description_auto"] is False
+        before = self.client.get("/api/profiles/skill-roster/settings").json()
+        assert {s["name"] for s in before["skills_assigned"]} == {"on-profile"}
+        assert {s["name"] for s in before["skills_available"]} == {"lib-only"}
+
+        added = self.client.post(
+            "/api/profiles/skill-roster/skills/add",
+            json={"name": "lib-only"},
+        )
+        assert added.status_code == 200
+        assert (prof_dir / "skills" / "lib-only" / "SKILL.md").is_file()
+
+        after_add = self.client.get("/api/profiles/skill-roster/settings").json()
+        assert {s["name"] for s in after_add["skills_assigned"]} == {
+            "on-profile",
+            "lib-only",
+        }
+        assert after_add["skills_available"] == []
+
+        removed = self.client.delete("/api/profiles/skill-roster/skills/lib-only")
+        assert removed.status_code == 200
+        assert not (prof_dir / "skills" / "lib-only").exists()
+        assert library_skill.is_dir()
+
+        after_remove = self.client.get("/api/profiles/skill-roster/settings").json()
+        assert {s["name"] for s in after_remove["skills_assigned"]} == {"on-profile"}
+        assert {s["name"] for s in after_remove["skills_available"]} == {"lib-only"}
+
+        shutil.rmtree(prof_dir)
+        shutil.rmtree(library_skill)
 
     def test_skills_list(self):
         resp = self.client.get("/api/skills")

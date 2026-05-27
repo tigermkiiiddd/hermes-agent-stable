@@ -9559,21 +9559,199 @@ class ProfileSoulUpdate(BaseModel):
     content: str
 
 
-class ProfileActiveUpdate(BaseModel):
-    name: str
-
-
-class ProfileDescriptionUpdate(BaseModel):
-    description: str = ""
-
-
 class ProfileModelUpdate(BaseModel):
     provider: str
     model: str
 
 
-class ProfileDescribeAuto(BaseModel):
-    overwrite: bool = False
+def _read_profile_raw_yaml(profile_dir: Path) -> Dict[str, Any]:
+    """Read a profile's config.yaml without merging defaults."""
+    config_path = profile_dir / "config.yaml"
+    if not config_path.is_file():
+        return {}
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_profile_raw_yaml(profile_dir: Path, data: Dict[str, Any]) -> None:
+    """Persist a profile's config.yaml and drop cached reads for that path."""
+    from utils import atomic_yaml_write
+    from hermes_cli.config import _CONFIG_LOCK, _LOAD_CONFIG_CACHE, _RAW_CONFIG_CACHE, _secure_file
+
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    config_path = profile_dir / "config.yaml"
+    atomic_yaml_write(config_path, data, sort_keys=False)
+    _secure_file(config_path)
+    path_key = str(config_path.resolve())
+    with _CONFIG_LOCK:
+        _LOAD_CONFIG_CACHE.pop(path_key, None)
+        _RAW_CONFIG_CACHE.pop(path_key, None)
+
+
+def _scan_skills_directory(skills_dir: Path) -> List[Dict[str, Any]]:
+    """Scan a skills/ tree and return metadata (no enabled flag)."""
+    from agent.skill_utils import EXCLUDED_SKILL_DIRS, iter_skill_index_files
+    from tools.skills_tool import (
+        MAX_DESCRIPTION_LENGTH,
+        MAX_NAME_LENGTH,
+        _get_category_from_path,
+        _parse_frontmatter,
+        skill_matches_platform,
+    )
+
+    if not skills_dir.is_dir():
+        return []
+
+    skills: List[Dict[str, Any]] = []
+    seen_names: set = set()
+    for skill_md in iter_skill_index_files(skills_dir, "SKILL.md"):
+        if any(part in EXCLUDED_SKILL_DIRS for part in skill_md.parts):
+            continue
+        try:
+            content = skill_md.read_text(encoding="utf-8")[:4000]
+            frontmatter, body = _parse_frontmatter(content)
+            if not skill_matches_platform(frontmatter):
+                continue
+            name = str(frontmatter.get("name", skill_md.parent.name))[:MAX_NAME_LENGTH]
+            if name in seen_names:
+                continue
+            description = str(frontmatter.get("description", "") or "")
+            if not description:
+                for line in body.strip().split("\n"):
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        description = line
+                        break
+            if len(description) > MAX_DESCRIPTION_LENGTH:
+                description = description[: MAX_DESCRIPTION_LENGTH - 3] + "..."
+            seen_names.add(name)
+            skills.append({
+                "name": name,
+                "description": description,
+                "category": _get_category_from_path(skill_md),
+            })
+        except Exception:
+            continue
+    skills.sort(key=lambda s: s["name"])
+    return skills
+
+
+def _skill_dirs_by_name(skills_dir: Path) -> Dict[str, Path]:
+    """Map skill name → skill directory (parent of SKILL.md)."""
+    from agent.skill_utils import EXCLUDED_SKILL_DIRS, iter_skill_index_files
+    from tools.skills_tool import MAX_NAME_LENGTH, _parse_frontmatter, skill_matches_platform
+
+    if not skills_dir.is_dir():
+        return {}
+    mapping: Dict[str, Path] = {}
+    for skill_md in iter_skill_index_files(skills_dir, "SKILL.md"):
+        if any(part in EXCLUDED_SKILL_DIRS for part in skill_md.parts):
+            continue
+        try:
+            content = skill_md.read_text(encoding="utf-8")[:4000]
+            frontmatter, _body = _parse_frontmatter(content)
+            if not skill_matches_platform(frontmatter):
+                continue
+            name = str(frontmatter.get("name", skill_md.parent.name))[:MAX_NAME_LENGTH]
+            mapping.setdefault(name, skill_md.parent)
+        except Exception:
+            continue
+    return mapping
+
+
+def _list_profile_skills(profile_dir: Path, config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Skills physically present under this profile's skills/ directory."""
+    from hermes_cli.skills_config import get_disabled_skills
+
+    disabled = get_disabled_skills(config)
+    assigned = _scan_skills_directory(profile_dir / "skills")
+    for item in assigned:
+        item["enabled"] = item["name"] not in disabled
+    return assigned
+
+
+def _profile_skills_roster(profile_dir: Path, config: Dict[str, Any]) -> Dict[str, Any]:
+    """Assigned skills on this profile + library skills not yet copied onto it."""
+    from hermes_cli import profiles as profiles_mod
+
+    assigned = _list_profile_skills(profile_dir, config)
+    assigned_names = {s["name"] for s in assigned}
+    library_dir = profiles_mod._get_default_hermes_home() / "skills"
+    library = _scan_skills_directory(library_dir)
+    available = [s for s in library if s["name"] not in assigned_names]
+    return {"assigned": assigned, "available": available}
+
+
+def _add_profile_skill_from_library(profile_dir: Path, skill_name: str) -> None:
+    """Copy a skill directory from the default skill library onto this profile."""
+    import shutil
+    from hermes_cli import profiles as profiles_mod
+
+    library_root = (profiles_mod._get_default_hermes_home() / "skills").resolve()
+    profile_skills = profile_dir / "skills"
+    lib_map = _skill_dirs_by_name(library_root)
+    if skill_name not in lib_map:
+        raise HTTPException(status_code=404, detail=f"skill '{skill_name}' not in library")
+    if skill_name in _skill_dirs_by_name(profile_skills):
+        raise HTTPException(status_code=400, detail=f"skill '{skill_name}' already on profile")
+
+    src_dir = lib_map[skill_name].resolve()
+    if not str(src_dir).startswith(str(library_root)):
+        raise HTTPException(status_code=400, detail="invalid library skill path")
+    rel = src_dir.relative_to(library_root)
+    dst = (profile_skills / rel).resolve()
+    if not str(dst).startswith(str(profile_skills.resolve())):
+        raise HTTPException(status_code=400, detail="invalid destination path")
+    if dst.exists():
+        raise HTTPException(status_code=400, detail=f"skill path already exists: {rel}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src_dir, dst)
+
+
+def _remove_profile_skill(profile_dir: Path, skill_name: str) -> None:
+    """Remove a skill directory from this profile (does not touch the default library)."""
+    import shutil
+
+    profile_skills = profile_dir / "skills"
+    prof_map = _skill_dirs_by_name(profile_skills)
+    if skill_name not in prof_map:
+        raise HTTPException(status_code=404, detail=f"skill '{skill_name}' not on profile")
+
+    skill_path = prof_map[skill_name].resolve()
+    skills_root = profile_skills.resolve()
+    if not str(skill_path).startswith(str(skills_root)):
+        raise HTTPException(status_code=400, detail="invalid profile skill path")
+    shutil.rmtree(skill_path)
+
+    raw = _read_profile_raw_yaml(profile_dir)
+    from hermes_cli.skills_config import get_disabled_skills
+
+    disabled = get_disabled_skills(raw)
+    if skill_name in disabled:
+        disabled.discard(skill_name)
+        raw.setdefault("skills", {})
+        if not isinstance(raw["skills"], dict):
+            raw["skills"] = {}
+        raw["skills"]["disabled"] = sorted(disabled)
+        _write_profile_raw_yaml(profile_dir, raw)
+
+
+def _update_profile_model(profile_dir: Path, provider: str, model: str) -> None:
+    raw = _read_profile_raw_yaml(profile_dir)
+    model_cfg = raw.get("model")
+    if not isinstance(model_cfg, dict):
+        model_cfg = {}
+    model_cfg["provider"] = provider
+    model_cfg["default"] = model
+    if model_cfg.get("base_url"):
+        model_cfg["base_url"] = ""
+    model_cfg.pop("context_length", None)
+    raw["model"] = model_cfg
+    _write_profile_raw_yaml(profile_dir, raw)
 
 
 def _profile_attr(info, name: str, default: Any = None) -> Any:
@@ -10066,75 +10244,40 @@ async def update_profile_soul(name: str, body: ProfileSoulUpdate):
     return {"ok": True}
 
 
-@app.put("/api/profiles/{name}/description")
-async def update_profile_description_endpoint(name: str, body: ProfileDescriptionUpdate):
-    """Set or clear a profile's role description (kanban routing signal).
-
-    Empty string clears the description. Non-empty stores it as a
-    user-authored description (``description_auto: false``) so the
-    auto-describer won't overwrite it on a sweep.
-    """
+@app.get("/api/profiles/{name}/settings")
+async def get_profile_settings(name: str):
+    """Per-profile model/provider and skill enablement for the dashboard."""
     from hermes_cli import profiles as profiles_mod
+
     profile_dir = _resolve_profile_dir(name)
-    text = (body.description or "").strip()
-    try:
-        profiles_mod.write_profile_meta(
-            profile_dir,
-            description=text,
-            description_auto=False,
-        )
-    except Exception as e:
-        _log.exception("PUT /api/profiles/%s/description failed", name)
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"ok": True, "description": text, "description_auto": False}
+    raw = _read_profile_raw_yaml(profile_dir)
+    model, provider = profiles_mod._read_config_model(profile_dir)
+    roster = _profile_skills_roster(profile_dir, raw)
+    default_home = profiles_mod._get_default_hermes_home().resolve()
+    shared_library = profile_dir.resolve() == default_home
+    return {
+        "model": model or "",
+        "provider": provider or "",
+        "skills": roster["assigned"],
+        "skills_assigned": roster["assigned"],
+        "skills_available": roster["available"],
+        "profile_uses_shared_library": shared_library,
+    }
 
 
 @app.put("/api/profiles/{name}/model")
-async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
-    """Set the main model (``model.default`` + ``model.provider``) for a
-    specific profile's config.yaml, without touching the dashboard's own
-    active profile. Mirrors ``POST /api/model/set`` (main scope) but scoped
-    to the named profile via the HERMES_HOME override.
-    """
-    profile_dir = _resolve_profile_dir(name)
+async def update_profile_model(name: str, body: ProfileModelUpdate):
     provider = (body.provider or "").strip()
     model = (body.model or "").strip()
     if not provider or not model:
         raise HTTPException(status_code=400, detail="provider and model are required")
+    profile_dir = _resolve_profile_dir(name)
     try:
-        _write_profile_model(profile_dir, provider, model)
-    except Exception as e:
+        _update_profile_model(profile_dir, provider, model)
+    except OSError as e:
         _log.exception("PUT /api/profiles/%s/model failed", name)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Could not update model: {e}")
     return {"ok": True, "provider": provider, "model": model}
-
-
-@app.post("/api/profiles/{name}/describe-auto")
-async def describe_profile_auto_endpoint(name: str, body: ProfileDescribeAuto):
-    """Auto-generate a profile's description via the auxiliary LLM
-    (``auxiliary.profile_describer``). Mirrors ``hermes profile describe
-    <name> --auto``.
-
-    A failed generation (no aux client, LLM error, …) is returned as
-    ``ok: false`` with a reason rather than an HTTP error so the UI can
-    surface it inline and let the operator fix config and retry.
-    """
-    _resolve_profile_dir(name)
-    try:
-        from hermes_cli import profile_describer
-        outcome = profile_describer.describe_profile(name, overwrite=bool(body.overwrite))
-    except Exception as e:
-        _log.exception("POST /api/profiles/%s/describe-auto failed", name)
-        raise HTTPException(status_code=500, detail=str(e))
-    return {
-        "ok": bool(outcome.ok),
-        "reason": outcome.reason,
-        "description": outcome.description,
-        # Only a successful generation is an auto-authored description. A failed
-        # sweep leaves any existing description untouched, so don't claim it's
-        # auto-generated.
-        "description_auto": bool(outcome.ok),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -10250,6 +10393,67 @@ class SkillToggle(BaseModel):
     name: str
     enabled: bool
     profile: Optional[str] = None
+
+
+class ProfileSkillName(BaseModel):
+    name: str
+
+
+@app.post("/api/profiles/{name}/skills/add")
+async def add_profile_skill(name: str, body: ProfileSkillName):
+    """Attach a skill from the default library onto this profile's skills/ tree."""
+    skill_name = (body.name or "").strip()
+    if not skill_name:
+        raise HTTPException(status_code=400, detail="skill name is required")
+    profile_dir = _resolve_profile_dir(name)
+    try:
+        _add_profile_skill_from_library(profile_dir, skill_name)
+    except HTTPException:
+        raise
+    except OSError as e:
+        _log.exception("POST /api/profiles/%s/skills/add failed", name)
+        raise HTTPException(status_code=500, detail=f"Could not add skill: {e}")
+    return {"ok": True, "name": skill_name}
+
+
+@app.delete("/api/profiles/{name}/skills/{skill_name}")
+async def remove_profile_skill(name: str, skill_name: str):
+    """Detach a skill from this profile (removes its directory under profile skills/)."""
+    skill_name = (skill_name or "").strip()
+    if not skill_name:
+        raise HTTPException(status_code=400, detail="skill name is required")
+    profile_dir = _resolve_profile_dir(name)
+    try:
+        _remove_profile_skill(profile_dir, skill_name)
+    except HTTPException:
+        raise
+    except OSError as e:
+        _log.exception("DELETE /api/profiles/%s/skills/%s failed", name, skill_name)
+        raise HTTPException(status_code=500, detail=f"Could not remove skill: {e}")
+    return {"ok": True, "name": skill_name}
+
+
+@app.put("/api/profiles/{name}/skills/toggle")
+async def toggle_profile_skill(name: str, body: SkillToggle):
+    profile_dir = _resolve_profile_dir(name)
+    raw = _read_profile_raw_yaml(profile_dir)
+    from hermes_cli.skills_config import get_disabled_skills
+
+    disabled = get_disabled_skills(raw)
+    if body.enabled:
+        disabled.discard(body.name)
+    else:
+        disabled.add(body.name)
+    raw.setdefault("skills", {})
+    if not isinstance(raw["skills"], dict):
+        raw["skills"] = {}
+    raw["skills"]["disabled"] = sorted(disabled)
+    try:
+        _write_profile_raw_yaml(profile_dir, raw)
+    except OSError as e:
+        _log.exception("PUT /api/profiles/%s/skills/toggle failed", name)
+        raise HTTPException(status_code=500, detail=f"Could not update skills: {e}")
+    return {"ok": True, "name": body.name, "enabled": body.enabled}
 
 
 @app.get("/api/skills")
