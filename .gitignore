@@ -108,3 +108,7 @@ hermes_cli/tui_dist/*
 hermes_cli/scripts/
 docs/superpowers/*
 .gitnexus
+
+# Local agent artifacts
+.playwright-mcp/
+.hermes/

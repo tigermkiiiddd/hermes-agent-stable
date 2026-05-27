@@ -1,0 +1,16 @@
+---
+description: 先分清用户在说哪一层——业务 Hermes agent、仓库开发、还是 Cursor 本身。
+alwaysApply: true
+---
+
+# 分清作用领域
+
+改东西或记约定之前，先判断用户说的是哪一层，**不要混用**：
+
+| 领域 | 是什么 | 写哪儿 |
+|------|--------|--------|
+| **业务 agent** | 线上 Hermes（对话、工具、profile、gateway） | `~/.hermes/`（SOUL、Memory、config）、skills、运行时行为 |
+| **开发 agent** | 改 `hermes-agent` 仓库（Python/前端/测试） | 源码、`AGENTS.md`、本仓库文档与测试 |
+| **Cursor** | IDE 里的编码助手（你） | `.cursor/rules/`、Cursor 设置，**不要**写进 `~/.hermes` |
+
+拿不准就先问一句，或按上下文推断，别把约定记错层。
