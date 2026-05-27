@@ -8,6 +8,7 @@ import {
 import {
   ChevronDown,
   Pencil,
+  Settings2,
   Terminal,
   Trash2,
   Users,
@@ -16,7 +17,23 @@ import {
 import spinners from "unicode-animations";
 import { H2 } from "@/components/NouiTypography";
 import { api } from "@/lib/api";
-import type { ProfileInfo } from "@/lib/api";
+import type {
+  ProfileInfo,
+  ProfileSettings,
+  ProfileSkillEntry,
+} from "@/lib/api";
+
+function normalizeProfileSettings(raw: ProfileSettings): ProfileSettings {
+  const assigned = raw.skills_assigned ?? raw.skills ?? [];
+  const available = raw.skills_available ?? [];
+  return {
+    ...raw,
+    skills_assigned: assigned,
+    skills_available: available,
+    skills: assigned,
+  };
+}
+import { ModelPickerDialog } from "@/components/ModelPickerDialog";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useToast } from "@/hooks/useToast";
 import { useConfirmDelete } from "@/hooks/useConfirmDelete";
@@ -28,6 +45,7 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@nous-research/ui/ui/components/checkbox";
+import { Switch } from "@nous-research/ui/ui/components/switch";
 import { useI18n } from "@/i18n";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { cn, themedBody } from "@/lib/utils";
@@ -95,6 +113,18 @@ export default function ProfilesPage() {
   // newer state when the user switches profiles or closes the editor.
   const activeSoulRequest = useRef<string | null>(null);
 
+  const [configuringFor, setConfiguringFor] = useState<string | null>(null);
+  const [profileSettings, setProfileSettings] = useState<ProfileSettings | null>(
+    null,
+  );
+  const [profileSettingsMeta, setProfileSettingsMeta] = useState<{
+    hadAvailableField: boolean;
+  } | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [modelPickerFor, setModelPickerFor] = useState<string | null>(null);
+  const [togglingSkills, setTogglingSkills] = useState<Set<string>>(new Set());
+  const activeSettingsRequest = useRef<string | null>(null);
+
   const load = useCallback(() => {
     api
       .getProfiles()
@@ -157,6 +187,123 @@ export default function ProfilesPage() {
     }
   };
 
+  const loadProfileSettings = useCallback(
+    async (name: string) => {
+      activeSettingsRequest.current = name;
+      setSettingsLoading(true);
+      setProfileSettings(null);
+      setProfileSettingsMeta(null);
+      try {
+        const raw = await api.getProfileSettings(name);
+        const settings = normalizeProfileSettings(raw);
+        if (activeSettingsRequest.current === name) {
+          setProfileSettings(settings);
+          setProfileSettingsMeta({
+            hadAvailableField: "skills_available" in raw,
+          });
+        }
+      } catch (e) {
+        if (activeSettingsRequest.current === name) {
+          showToast(`${t.status.error}: ${e}`, "error");
+        }
+      } finally {
+        if (activeSettingsRequest.current === name) {
+          setSettingsLoading(false);
+        }
+      }
+    },
+    [showToast, t.status.error],
+  );
+
+  const openConfigure = useCallback(
+    async (name: string) => {
+      if (configuringFor === name) {
+        activeSettingsRequest.current = null;
+        setConfiguringFor(null);
+        setProfileSettings(null);
+        setProfileSettingsMeta(null);
+        return;
+      }
+      setConfiguringFor(name);
+      setEditingSoulFor(null);
+      await loadProfileSettings(name);
+    },
+    [configuringFor, loadProfileSettings],
+  );
+
+  const handleToggleProfileSkill = async (
+    profileName: string,
+    skill: ProfileSkillEntry,
+  ) => {
+    setTogglingSkills((prev) => new Set(prev).add(skill.name));
+    try {
+      await api.toggleProfileSkill(profileName, skill.name, !skill.enabled);
+      setProfileSettings((prev) => {
+        if (!prev) return prev;
+        const mapAssigned = (list: ProfileSkillEntry[]) =>
+          list.map((s) =>
+            s.name === skill.name ? { ...s, enabled: !s.enabled } : s,
+          );
+        return {
+          ...prev,
+          skills_assigned: mapAssigned(prev.skills_assigned),
+          skills: mapAssigned(prev.skills_assigned),
+        };
+      });
+      load();
+    } catch (e) {
+      showToast(`${t.status.error}: ${e}`, "error");
+    } finally {
+      setTogglingSkills((prev) => {
+        const next = new Set(prev);
+        next.delete(skill.name);
+        return next;
+      });
+    }
+  };
+
+  const handleAddProfileSkill = async (
+    profileName: string,
+    skill: ProfileSkillEntry,
+  ) => {
+    setTogglingSkills((prev) => new Set(prev).add(`add:${skill.name}`));
+    try {
+      await api.addProfileSkill(profileName, skill.name);
+      showToast(`${t.profiles.skillAdded}: ${skill.name}`, "success");
+      await loadProfileSettings(profileName);
+      load();
+    } catch (e) {
+      showToast(`${t.status.error}: ${e}`, "error");
+    } finally {
+      setTogglingSkills((prev) => {
+        const next = new Set(prev);
+        next.delete(`add:${skill.name}`);
+        return next;
+      });
+    }
+  };
+
+  const handleRemoveProfileSkill = async (
+    profileName: string,
+    skill: ProfileSkillEntry,
+  ) => {
+    setTogglingSkills((prev) => new Set(prev).add(`remove:${skill.name}`));
+    try {
+      await api.removeProfileSkill(profileName, skill.name);
+      showToast(`${t.profiles.skillRemoved}: ${skill.name}`, "success");
+      await loadProfileSettings(profileName);
+      load();
+    } catch (e) {
+      showToast(`${t.status.error}: ${e}`, "error");
+    } finally {
+      setTogglingSkills((prev) => {
+        const next = new Set(prev);
+        next.delete(`remove:${skill.name}`);
+        return next;
+      });
+    }
+  };
+
   const openSoulEditor = useCallback(
     async (name: string) => {
       if (editingSoulFor === name) {
@@ -164,6 +311,9 @@ export default function ProfilesPage() {
         setEditingSoulFor(null);
         return;
       }
+      activeSettingsRequest.current = null;
+      setConfiguringFor(null);
+      setProfileSettings(null);
       setEditingSoulFor(name);
       setSoulText("");
       activeSoulRequest.current = name;
@@ -382,6 +532,24 @@ export default function ProfilesPage() {
         {profiles.map((p) => {
           const isRenaming = renamingFrom === p.name;
           const isEditingSoul = editingSoulFor === p.name;
+          const isConfiguring = configuringFor === p.name;
+          const settings =
+            isConfiguring && profileSettings ? profileSettings : null;
+          const assignedSkills = settings?.skills_assigned ?? [];
+          const availableSkills = settings?.skills_available ?? [];
+          const sharedSkillLibrary =
+            settings?.profile_uses_shared_library ?? p.is_default;
+          const libraryEmptyHint = settingsLoading
+            ? null
+            : sharedSkillLibrary
+              ? t.profiles.skillsLibrarySharedDefault
+              : availableSkills.length === 0
+                ? profileSettingsMeta?.hadAvailableField
+                  ? t.profiles.skillsLibraryAllAdded
+                  : t.profiles.skillsLibraryUnavailable
+                : null;
+          const enabledSkillCount =
+            assignedSkills.filter((s) => s.enabled).length ?? 0;
           return (
             <Card key={p.name}>
               <CardContent className="flex items-start gap-4 py-4">
@@ -472,6 +640,20 @@ export default function ProfilesPage() {
                       <Button
                         ghost
                         size="icon"
+                        title={t.profiles.configure}
+                        aria-label={t.profiles.configure}
+                        aria-expanded={isConfiguring}
+                        onClick={() => openConfigure(p.name)}
+                      >
+                        {isConfiguring ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <Settings2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        ghost
+                        size="icon"
                         title={t.profiles.editSoul}
                         aria-label={t.profiles.editSoul}
                         onClick={() => openSoulEditor(p.name)}
@@ -523,6 +705,149 @@ export default function ProfilesPage() {
                 </div>
               </CardContent>
 
+              {isConfiguring && (
+                <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-4">
+                  <p className="text-xs text-muted-foreground">
+                    {t.profiles.configureTitle}
+                  </p>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground mb-0.5">
+                        {t.profiles.model}
+                        {settings?.provider
+                          ? ` · ${t.profiles.provider}: ${settings.provider}`
+                          : ""}
+                      </p>
+                      <p className="text-sm font-mono truncate">
+                        {settingsLoading
+                          ? t.common.loading
+                          : settings?.model || t.profiles.noModelSet}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="uppercase shrink-0"
+                      disabled={settingsLoading}
+                      onClick={() => setModelPickerFor(p.name)}
+                    >
+                      {t.profiles.changeModel}
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-xs text-muted-foreground">
+                        {t.profiles.skills}
+                      </Label>
+                      {assignedSkills.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {t.profiles.skillsEnabled
+                            .replace("{enabled}", String(enabledSkillCount))
+                            .replace(
+                              "{total}",
+                              String(assignedSkills.length),
+                            )}
+                        </span>
+                      )}
+                    </div>
+                    {settingsLoading ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t.common.loading}
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {t.profiles.skillsOnProfile}
+                          </p>
+                          {assignedSkills.length > 0 ? (
+                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
+                              {assignedSkills.map((skill) => (
+                                <div
+                                  key={skill.name}
+                                  className="flex items-center gap-2 px-3 py-2"
+                                >
+                                  <Switch
+                                    checked={!!skill.enabled}
+                                    disabled={
+                                      togglingSkills.has(skill.name) ||
+                                      togglingSkills.has(`remove:${skill.name}`)
+                                    }
+                                    onCheckedChange={() =>
+                                      handleToggleProfileSkill(p.name, skill)
+                                    }
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium truncate">
+                                      {skill.name}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    ghost
+                                    size="sm"
+                                    className="h-7 text-xs uppercase shrink-0"
+                                    disabled={togglingSkills.has(
+                                      `remove:${skill.name}`,
+                                    )}
+                                    onClick={() =>
+                                      handleRemoveProfileSkill(p.name, skill)
+                                    }
+                                  >
+                                    {t.profiles.removeSkill}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {t.profiles.noSkillsInstalled}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {t.profiles.skillsInLibrary}
+                          </p>
+                          {libraryEmptyHint ? (
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {libraryEmptyHint}
+                            </p>
+                          ) : (
+                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
+                              {availableSkills.map((skill) => (
+                                <div
+                                  key={skill.name}
+                                  className="flex items-center gap-2 px-3 py-2"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium truncate">
+                                      {skill.name}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-xs uppercase shrink-0"
+                                    disabled={togglingSkills.has(
+                                      `add:${skill.name}`,
+                                    )}
+                                    onClick={() =>
+                                      handleAddProfileSkill(p.name, skill)
+                                    }
+                                  >
+                                    {t.profiles.addSkill}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {isEditingSoul && (
                 <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-2">
                   <Label
@@ -554,6 +879,22 @@ export default function ProfilesPage() {
           );
         })}
       </div>
+
+      {modelPickerFor && (
+        <ModelPickerDialog
+          loader={api.getModelOptions}
+          alwaysGlobal
+          title={t.profiles.changeModel}
+          onApply={async ({ provider, model }) => {
+            await api.setProfileModel(modelPickerFor, provider, model);
+            showToast(t.profiles.modelSaved, "success");
+            setModelPickerFor(null);
+            await loadProfileSettings(modelPickerFor);
+            load();
+          }}
+          onClose={() => setModelPickerFor(null)}
+        />
+      )}
     </div>
   );
 }

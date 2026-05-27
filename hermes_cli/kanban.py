@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_meeting as km
 from hermes_cli import kanban_swarm as ks
 from hermes_cli.profiles import get_active_profile_name, get_profile_dir, seed_profile_skills
 
@@ -369,6 +370,61 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_swarm.add_argument("--created-by", default=None, help="Creator/anchor profile")
     p_swarm.add_argument("--idempotency-key", default=None, help="Dedup key for the root card")
     p_swarm.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    # --- meeting ---
+    p_meeting = sub.add_parser(
+        "meeting",
+        help="Async Kanban meeting (deliberation issue type)",
+    )
+    meeting_sub = p_meeting.add_subparsers(dest="meeting_cmd", required=True)
+
+    p_m_create = meeting_sub.add_parser("create", help="Create a meeting")
+    p_m_create.add_argument("title", help="Meeting title")
+    p_m_create.add_argument("agenda", help="Agenda / question")
+    p_m_create.add_argument("--moderator", default=None, help="Host profile")
+    p_m_create.add_argument(
+        "--participant", action="append", default=[], metavar="PROFILE",
+        help="Invited speaker (repeatable)",
+    )
+    p_m_create.add_argument(
+        "--observer", action="append", default=[], metavar="PROFILE",
+        help="Observer (repeatable)",
+    )
+    p_m_create.add_argument("--tenant", default=None)
+    p_m_create.add_argument("--idempotency-key", default=None)
+    p_m_create.add_argument("--json", action="store_true")
+
+    p_m_join = meeting_sub.add_parser("join", help="Join meeting roster")
+    p_m_join.add_argument("meeting_id")
+    p_m_join.add_argument("--profile", default=None)
+    p_m_join.add_argument("--json", action="store_true")
+
+    p_m_speak = meeting_sub.add_parser("speak", help="Post an utterance")
+    p_m_speak.add_argument("meeting_id")
+    p_m_speak.add_argument("body", help="Utterance text")
+    p_m_speak.add_argument(
+        "--kind", default="note",
+        choices=sorted(km.VALID_UTTERANCE_KINDS),
+    )
+    p_m_speak.add_argument("--round", type=int, default=0)
+    p_m_speak.add_argument("--profile", default=None)
+    p_m_speak.add_argument("--json", action="store_true")
+
+    p_m_show = meeting_sub.add_parser("show", help="Show transcript")
+    p_m_show.add_argument("meeting_id")
+    p_m_show.add_argument("--json", action="store_true", help="Structured JSON")
+
+    p_m_advance = meeting_sub.add_parser("advance", help="Moderator: next phase")
+    p_m_advance.add_argument("meeting_id")
+    p_m_advance.add_argument(
+        "step", choices=list(km.MEETING_STEPS),
+    )
+    p_m_advance.add_argument("--json", action="store_true")
+
+    p_m_close = meeting_sub.add_parser("close", help="Moderator: close with decision")
+    p_m_close.add_argument("meeting_id")
+    p_m_close.add_argument("decision", help="Final decision text")
+    p_m_close.add_argument("--json", action="store_true")
 
     # --- list ---
     p_list = sub.add_parser("list", aliases=["ls"], help="List tasks")
@@ -915,6 +971,7 @@ def kanban_command(args: argparse.Namespace) -> int:
         "init":     _cmd_init,
         "create":   _cmd_create,
         "swarm":    _cmd_swarm,
+        "meeting":  _cmd_meeting,
         "list":     _cmd_list,
         "ls":       _cmd_list,
         "show":     _cmd_show,
@@ -1389,6 +1446,98 @@ def _cmd_swarm(args: argparse.Namespace) -> int:
         print(f"Verifier: {created.verifier_id}")
         print(f"Synthesizer: {created.synthesizer_id}")
     return 0
+
+
+def _cmd_meeting(args: argparse.Namespace) -> int:
+    sub = getattr(args, "meeting_cmd", None)
+    if not sub:
+        print("kanban meeting: subcommand required (create, join, speak, show, advance, close)", file=sys.stderr)
+        return 2
+    author = _profile_author()
+    try:
+        if sub == "create":
+            with kb.connect() as conn:
+                created = km.create_meeting(
+                    conn,
+                    title=args.title,
+                    agenda=args.agenda,
+                    moderator=args.moderator or author,
+                    participants=args.participant or [],
+                    observers=args.observer or [],
+                    created_by=author,
+                    tenant=args.tenant,
+                    idempotency_key=getattr(args, "idempotency_key", None),
+                )
+            if getattr(args, "json", False):
+                print(json.dumps(created.as_dict(), indent=2, ensure_ascii=False))
+            else:
+                print(f"Meeting: {created.meeting_id}")
+                print(f"Moderator: {created.moderator}")
+                if created.participants:
+                    print("Participants: " + ", ".join(created.participants))
+            return 0
+        if sub == "join":
+            with kb.connect() as conn:
+                out = km.join_meeting(conn, args.meeting_id, args.profile or author)
+            if getattr(args, "json", False):
+                print(json.dumps(out, indent=2, ensure_ascii=False))
+            else:
+                print(f"{out['profile']} joined {out['meeting_id']}")
+            return 0
+        if sub == "speak":
+            with kb.connect() as conn:
+                out = km.speak_in_meeting(
+                    conn,
+                    args.meeting_id,
+                    author=args.profile or author,
+                    kind=args.kind,
+                    body=args.body,
+                    round=args.round,
+                )
+            if getattr(args, "json", False):
+                print(json.dumps(out, indent=2, ensure_ascii=False))
+            else:
+                print(f"utterance {out['utterance_id']} ({out['kind']}) on {out['meeting_id']}")
+            return 0
+        if sub == "show":
+            with kb.connect() as conn:
+                ctx = km.get_meeting_context(conn, args.meeting_id)
+            if getattr(args, "json", False):
+                print(json.dumps(ctx, indent=2, ensure_ascii=False))
+            else:
+                print(km.format_meeting_transcript(ctx))
+            return 0
+        if sub == "advance":
+            with kb.connect() as conn:
+                out = km.advance_meeting_step(
+                    conn,
+                    args.meeting_id,
+                    moderator=author,
+                    next_step=args.step,
+                )
+            if getattr(args, "json", False):
+                print(json.dumps(out, indent=2, ensure_ascii=False))
+            else:
+                print(f"{out['meeting_id']}: {out['previous']} → {out['step']}")
+            return 0
+        if sub == "close":
+            with kb.connect() as conn:
+                out = km.close_meeting(
+                    conn,
+                    args.meeting_id,
+                    moderator=author,
+                    decision=args.decision,
+                )
+            if getattr(args, "json", False):
+                print(json.dumps(out, indent=2, ensure_ascii=False))
+            else:
+                print(f"Meeting {out['meeting_id']} closed: {out['decision'][:120]}")
+            return 0
+        print(f"kanban meeting: unknown subcommand {sub!r}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"kanban meeting: {exc}", file=sys.stderr)
+        return 2
 
 
 def _cmd_list(args: argparse.Namespace) -> int:

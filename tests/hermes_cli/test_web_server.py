@@ -2,6 +2,7 @@
 
 import os
 import json
+import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -812,6 +813,115 @@ class TestNewEndpoints:
     def test_profile_soul_unknown_profile_404(self):
         resp = self.client.get("/api/profiles/nonexistent/soul")
         assert resp.status_code == 404
+
+    def test_profile_settings_model_and_skills(self, monkeypatch):
+        from hermes_constants import get_hermes_home
+        import hermes_cli.profiles as profiles_mod
+
+        monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
+        home = get_hermes_home()
+        prof_dir = home / "profiles" / "cfg-prof"
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        (prof_dir / "config.yaml").write_text(
+            "model:\n  provider: openrouter\n  default: anthropic/claude-sonnet-4.6\n"
+            "skills:\n  disabled: [demo-off]\n",
+            encoding="utf-8",
+        )
+        skill_dir = prof_dir / "skills" / "demo-on"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: demo-on\ndescription: enabled skill\n---\n",
+            encoding="utf-8",
+        )
+        off_dir = prof_dir / "skills" / "demo-off"
+        off_dir.mkdir(parents=True)
+        (off_dir / "SKILL.md").write_text(
+            "---\nname: demo-off\ndescription: disabled skill\n---\n",
+            encoding="utf-8",
+        )
+
+        settings = self.client.get("/api/profiles/cfg-prof/settings")
+        assert settings.status_code == 200
+        body = settings.json()
+        assert body["provider"] == "openrouter"
+        assert body["model"] == "anthropic/claude-sonnet-4.6"
+        by_name = {s["name"]: s for s in body["skills"]}
+        assert by_name["demo-on"]["enabled"] is True
+        assert by_name["demo-off"]["enabled"] is False
+
+        updated = self.client.put(
+            "/api/profiles/cfg-prof/model",
+            json={"provider": "anthropic", "model": "claude-opus-4-6"},
+        )
+        assert updated.status_code == 200
+        reread = self.client.get("/api/profiles/cfg-prof/settings").json()
+        assert reread["provider"] == "anthropic"
+        assert reread["model"] == "claude-opus-4-6"
+
+        toggled = self.client.put(
+            "/api/profiles/cfg-prof/skills/toggle",
+            json={"name": "demo-off", "enabled": True},
+        )
+        assert toggled.status_code == 200
+        after_toggle = self.client.get("/api/profiles/cfg-prof/settings").json()
+        assert {s["name"]: s["enabled"] for s in after_toggle["skills"]}[
+            "demo-off"
+        ] is True
+
+        shutil.rmtree(prof_dir)
+
+    def test_profile_skills_add_and_remove_from_library(self, monkeypatch):
+        from hermes_constants import get_hermes_home
+        import hermes_cli.profiles as profiles_mod
+
+        monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
+        home = get_hermes_home()
+        library_skill = home / "skills" / "lib-only"
+        library_skill.mkdir(parents=True)
+        (library_skill / "SKILL.md").write_text(
+            "---\nname: lib-only\ndescription: library skill\n---\n",
+            encoding="utf-8",
+        )
+
+        prof_dir = home / "profiles" / "skill-roster"
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        (prof_dir / "config.yaml").write_text("model:\n  provider: openrouter\n", encoding="utf-8")
+        on_dir = prof_dir / "skills" / "on-profile"
+        on_dir.mkdir(parents=True)
+        (on_dir / "SKILL.md").write_text(
+            "---\nname: on-profile\ndescription: already assigned\n---\n",
+            encoding="utf-8",
+        )
+
+        before = self.client.get("/api/profiles/skill-roster/settings").json()
+        assert {s["name"] for s in before["skills_assigned"]} == {"on-profile"}
+        assert {s["name"] for s in before["skills_available"]} == {"lib-only"}
+
+        added = self.client.post(
+            "/api/profiles/skill-roster/skills/add",
+            json={"name": "lib-only"},
+        )
+        assert added.status_code == 200
+        assert (prof_dir / "skills" / "lib-only" / "SKILL.md").is_file()
+
+        after_add = self.client.get("/api/profiles/skill-roster/settings").json()
+        assert {s["name"] for s in after_add["skills_assigned"]} == {
+            "on-profile",
+            "lib-only",
+        }
+        assert after_add["skills_available"] == []
+
+        removed = self.client.delete("/api/profiles/skill-roster/skills/lib-only")
+        assert removed.status_code == 200
+        assert not (prof_dir / "skills" / "lib-only").exists()
+        assert library_skill.is_dir()
+
+        after_remove = self.client.get("/api/profiles/skill-roster/settings").json()
+        assert {s["name"] for s in after_remove["skills_assigned"]} == {"on-profile"}
+        assert {s["name"] for s in after_remove["skills_available"]} == {"lib-only"}
+
+        shutil.rmtree(prof_dir)
+        shutil.rmtree(library_skill)
 
     def test_skills_list(self):
         resp = self.client.get("/api/skills")
