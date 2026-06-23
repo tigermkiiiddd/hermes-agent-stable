@@ -9564,6 +9564,10 @@ class ProfileModelUpdate(BaseModel):
     model: str
 
 
+class ProfileActiveUpdate(BaseModel):
+    name: str
+
+
 def _read_profile_raw_yaml(profile_dir: Path) -> Dict[str, Any]:
     """Read a profile's config.yaml without merging defaults."""
     config_path = profile_dir / "config.yaml"
