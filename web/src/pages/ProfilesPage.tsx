@@ -1523,6 +1523,149 @@ export default function ProfilesPage() {
                 </div>
               )}
 
+              {isConfiguring && (
+                <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-4">
+                  <p className="text-xs text-muted-foreground">
+                    {t.profiles.configureTitle}
+                  </p>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground mb-0.5">
+                        {t.profiles.model}
+                        {settings?.provider
+                          ? ` · ${t.profiles.provider}: ${settings.provider}`
+                          : ""}
+                      </p>
+                      <p className="text-sm font-mono truncate">
+                        {settingsLoading
+                          ? t.common.loading
+                          : settings?.model || t.profiles.noModelSet}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="uppercase shrink-0"
+                      disabled={settingsLoading}
+                      onClick={() => setModelPickerFor(p.name)}
+                    >
+                      {t.profiles.changeModel}
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-xs text-muted-foreground">
+                        {t.profiles.skills}
+                      </Label>
+                      {assignedSkills.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {t.profiles.skillsEnabled
+                            .replace("{enabled}", String(enabledSkillCount))
+                            .replace(
+                              "{total}",
+                              String(assignedSkills.length),
+                            )}
+                        </span>
+                      )}
+                    </div>
+                    {settingsLoading ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t.common.loading}
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {t.profiles.skillsOnProfile}
+                          </p>
+                          {assignedSkills.length > 0 ? (
+                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
+                              {assignedSkills.map((skill) => (
+                                <div
+                                  key={skill.name}
+                                  className="flex items-center gap-2 px-3 py-2"
+                                >
+                                  <Switch
+                                    checked={!!skill.enabled}
+                                    disabled={
+                                      togglingSkills.has(skill.name) ||
+                                      togglingSkills.has(`remove:${skill.name}`)
+                                    }
+                                    onCheckedChange={() =>
+                                      handleToggleProfileSkill(p.name, skill)
+                                    }
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium truncate">
+                                      {skill.name}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    ghost
+                                    size="sm"
+                                    className="h-7 text-xs uppercase shrink-0"
+                                    disabled={togglingSkills.has(
+                                      `remove:${skill.name}`,
+                                    )}
+                                    onClick={() =>
+                                      handleRemoveProfileSkill(p.name, skill)
+                                    }
+                                  >
+                                    {t.profiles.removeSkill}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {t.profiles.noSkillsInstalled}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {t.profiles.skillsInLibrary}
+                          </p>
+                          {libraryEmptyHint ? (
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {libraryEmptyHint}
+                            </p>
+                          ) : (
+                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
+                              {availableSkills.map((skill) => (
+                                <div
+                                  key={skill.name}
+                                  className="flex items-center gap-2 px-3 py-2"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium truncate">
+                                      {skill.name}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-xs uppercase shrink-0"
+                                    disabled={togglingSkills.has(
+                                      `add:${skill.name}`,
+                                    )}
+                                    onClick={() =>
+                                      handleAddProfileSkill(p.name, skill)
+                                    }
+                                  >
+                                    {t.profiles.addSkill}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {isEditingSoul && (
                 <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-2">
                   <Label

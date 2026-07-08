@@ -315,7 +315,7 @@ export function ChatSidebar({
       <Card className="flex items-center justify-between gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <div className="text-display text-xs tracking-wider text-text-tertiary">
-            model
+            {ui.sidebar.modelLabel}
           </div>
 
           <Button
@@ -382,7 +382,7 @@ export function ChatSidebar({
                 onClick={reconnect}
                 prefix={<RefreshCw />}
               >
-                reconnect
+                {ui.sidebar.reconnect}
               </Button>
             )}
           </div>

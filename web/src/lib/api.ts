@@ -2119,6 +2119,24 @@ export interface ProfileSettings {
   profile_uses_shared_library?: boolean;
 }
 
+export interface ProfileSkillEntry {
+  name: string;
+  description: string;
+  category: string | null;
+  enabled?: boolean;
+}
+
+export interface ProfileSettings {
+  model: string;
+  provider: string;
+  /** @deprecated use skills_assigned */
+  skills: ProfileSkillEntry[];
+  skills_assigned: ProfileSkillEntry[];
+  skills_available: ProfileSkillEntry[];
+  /** True when this profile's skills/ tree is the default library (~/.hermes/skills). */
+  profile_uses_shared_library?: boolean;
+}
+
 export interface ModelsAnalyticsModelEntry {
   model: string;
   provider: string;

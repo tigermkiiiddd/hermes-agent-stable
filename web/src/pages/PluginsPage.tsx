@@ -497,7 +497,10 @@ export default function PluginsPage() {
       showToast(t.pluginsPage.savedProviders, "success");
       await loadHub();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Save failed", "error");
+      showToast(
+        e instanceof Error ? e.message : ui.pluginsPage.saveFailed,
+        "error",
+      );
     } finally {
       setContextBusy(false);
     }

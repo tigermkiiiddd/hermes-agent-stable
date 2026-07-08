@@ -1862,6 +1862,48 @@ class PluginManager:
                     manifest.name, exc, exc_info=_PLUGINS_DEBUG,
                 )
 
+        # Start MCP servers declared by this plugin (even if register() failed,
+        # external services can still function independently).
+        if manifest.mcp_servers:
+            try:
+                from tools import mcp_tool
+
+                plugin_key = manifest.key or manifest.name
+                plugin_dir = Path(manifest.path) if manifest.path else Path.cwd()
+                prefixed_servers: Dict[str, dict] = {}
+                for name, cfg in manifest.mcp_servers.items():
+                    resolved_cfg = dict(cfg)
+                    # Resolve relative command paths against plugin directory
+                    cmd = resolved_cfg.get("command", "")
+                    if cmd and not os.path.isabs(cmd):
+                        abs_cmd = plugin_dir / cmd
+                        if abs_cmd.exists():
+                            resolved_cfg["command"] = str(abs_cmd)
+                    # Resolve relative args that look like file paths
+                    args = list(resolved_cfg.get("args", []))
+                    for i, arg in enumerate(args):
+                        if isinstance(arg, str) and not os.path.isabs(arg):
+                            abs_arg = plugin_dir / arg
+                            if abs_arg.exists():
+                                args[i] = str(abs_arg)
+                    resolved_cfg["args"] = args
+                    prefixed_servers[f"{plugin_key}/{name}"] = resolved_cfg
+                mcp_tool.register_mcp_servers(prefixed_servers)
+                loaded.mcp_servers_registered = list(prefixed_servers.keys())
+                self._plugin_mcp_servers[plugin_key] = loaded.mcp_servers_registered
+                loaded.enabled = True
+                logger.debug(
+                    "Plugin '%s' started %d MCP server(s): %s",
+                    plugin_key,
+                    len(loaded.mcp_servers_registered),
+                    ", ".join(loaded.mcp_servers_registered),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to start MCP servers for plugin '%s': %s",
+                    manifest.name, exc, exc_info=_PLUGINS_DEBUG,
+                )
+
         self._plugins[manifest.key or manifest.name] = loaded
 
     def unload_plugin(self, plugin_key: str) -> None:

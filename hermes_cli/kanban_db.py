@@ -2353,6 +2353,48 @@ def _execute_boundary_with_retry(conn: sqlite3.Connection, sql: str) -> None:
         time.sleep(random.uniform(_BUSY_RETRY_MIN_S, _BUSY_RETRY_MAX_S))
 
 
+def _migrate_meeting_schema(conn: sqlite3.Connection) -> None:
+    """Add issue_type on tasks and meeting participant/utterance tables."""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "issue_type" not in cols:
+        _add_column_if_missing(
+            conn, "tasks", "issue_type", "issue_type TEXT NOT NULL DEFAULT 'work'"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_issue_type ON tasks(issue_type)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS meeting_participants (
+            task_id    TEXT NOT NULL,
+            profile    TEXT NOT NULL,
+            role       TEXT NOT NULL,
+            status     TEXT NOT NULL DEFAULT 'invited',
+            joined_at  INTEGER,
+            PRIMARY KEY (task_id, profile)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS meeting_utterances (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id    TEXT NOT NULL,
+            author     TEXT NOT NULL,
+            kind       TEXT NOT NULL,
+            body       TEXT NOT NULL,
+            round      INTEGER NOT NULL DEFAULT 0,
+            metadata   TEXT,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_meeting_utt_task "
+        "ON meeting_utterances(task_id, created_at)"
+    )
+
+
 @contextlib.contextmanager
 def write_txn(conn: sqlite3.Connection):
     """Context manager for an IMMEDIATE write transaction.
