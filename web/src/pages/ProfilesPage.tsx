@@ -894,7 +894,7 @@ export default function ProfilesPage() {
       {createModalOpen && (
         <div
           ref={createModalRef}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 p-4"
           onClick={(e) =>
             e.target === e.currentTarget && setCreateModalOpen(false)
           }
@@ -1351,16 +1351,42 @@ export default function ProfilesPage() {
               </Card>
             );
           })}
-        </div>
-      </div>
+                  </div>
+                </div>
 
-              {isConfiguring && (
+                {/* Editor dialog — model / description / SOUL for the selected profile */}
+                {editorName && (
+                  <div
+                    ref={editorModalRef}
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 p-4"
+                    onClick={(e) => e.target === e.currentTarget && closeEditor()}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="profile-editor-title"
+                  >
+                    <div
+                      className={cn(
+                        themedBody,
+                        "relative w-full max-w-lg border border-border bg-card shadow-2xl flex flex-col max-h-[90vh]",
+                      )}
+                    >
+                      <Button
+                        ghost
+                        size="icon"
+                        onClick={closeEditor}
+                        className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                        aria-label="Close"
+                      >
+                        <X />
+                      </Button>
+
+                        {isConfiguring && (
                 <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-4">
                   <p className="text-xs text-muted-foreground">
-                    {t.profiles.configureTitle}
-                  </p>
+                                      {t.profiles.configureTitle}
+                                    </p>
 
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground mb-0.5">
                         {t.profiles.model}
