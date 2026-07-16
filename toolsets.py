@@ -75,6 +75,7 @@ _HERMES_CORE_TOOLS = [
     "kanban_complete", "kanban_block", "kanban_heartbeat",
     "kanban_comment", "kanban_create", "kanban_link",
     "kanban_unblock",
+    "kanban_attach", "kanban_attach_url", "kanban_attachments",
     # Computer use (macOS, gated on cua-driver being installed via check_fn)
     "computer_use",
 ]
@@ -264,7 +265,7 @@ TOOLSETS = {
             "set). The dispatcher runs inside the gateway by default; see "
             "`kanban.dispatch_in_gateway` in config.yaml. Lets workers mark "
             "tasks done with structured handoffs, block for human input, "
-            "heartbeat during long ops, comment on threads, async meetings "
+            "heartbeat during long ops, comment on threads, attach files, async meetings "
             "(meeting_create/join/speak/advance/close), and (for orchestrators) "
             "list, unblock, and fan out tasks."
         ),
@@ -273,6 +274,7 @@ TOOLSETS = {
             "kanban_heartbeat", "kanban_comment",
             "kanban_create", "kanban_link",
             "kanban_unblock",
+            "kanban_attach", "kanban_attach_url", "kanban_attachments",
             "meeting_create", "meeting_join", "meeting_invite", "meeting_speak",
             "meeting_show", "meeting_advance", "meeting_close",
         ],
