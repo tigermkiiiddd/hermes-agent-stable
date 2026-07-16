@@ -54,6 +54,7 @@ interface SlashCommandDeps {
     platform: string,
     options?: { onProgress?: (state: string) => void; sessionId?: string }
   ) => Promise<{ ok: boolean; error?: string }>
+  openKanban: () => void
   openMemoryGraph: () => void
   refreshSessions: () => Promise<void>
   requestGateway: GatewayRequest
@@ -76,6 +77,7 @@ export function useSlashCommand(deps: SlashCommandDeps) {
     createBackendSessionForSend,
     handleSkinCommand,
     handoffSession,
+    openKanban,
     openMemoryGraph,
     refreshSessions,
     requestGateway,
@@ -396,6 +398,13 @@ export function useSlashCommand(deps: SlashCommandDeps) {
         // Args are ignored, matching the TUI overlay behavior.
         journey: async () => {
           openMemoryGraph()
+        },
+        // /kanban opens the kanban board overlay — the desktop's visual
+        // counterpart of the hermes kanban command.
+        // Args are ignored; the overlay shows boards and lets you open the
+        // full dashboard in the browser.
+        kanban: async () => {
+          openKanban()
         },
         // /hatch opens the pet generator overlay (the desktop's rich, multi-step
         // generate→pick→hatch→adopt flow). A typed description seeds the prompt

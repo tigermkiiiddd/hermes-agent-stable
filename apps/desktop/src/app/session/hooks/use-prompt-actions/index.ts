@@ -174,6 +174,7 @@ interface PromptActionsOptions {
   createBackendSessionForSend: (preview?: string | null) => Promise<string | null>
   getRouteToken: () => string
   handleSkinCommand: (arg: string) => string
+  openKanban: () => void
   openMemoryGraph: () => void
   refreshSessions: () => Promise<void>
   requestGateway: <T>(method: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<T>
@@ -203,6 +204,7 @@ export function usePromptActions({
   createBackendSessionForSend,
   getRouteToken,
   handleSkinCommand,
+  openKanban,
   openMemoryGraph,
   refreshSessions,
   requestGateway,
@@ -468,6 +470,7 @@ export function usePromptActions({
     createBackendSessionForSend,
     handleSkinCommand,
     handoffSession,
+    openKanban,
     openMemoryGraph,
     refreshSessions,
     requestGateway,

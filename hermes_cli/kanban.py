@@ -941,6 +941,14 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
 # Command dispatch
 # ---------------------------------------------------------------------------
 
+
+def _restore_board_env() -> None:
+    """Vestigial: board env is managed by kb.scoped_current_board context
+    manager.  Kept as a no-op so legacy call sites (error exit points
+    in kanban_command) don't NameError."""
+    pass
+
+
 def kanban_command(args: argparse.Namespace) -> int:
     """Entry point from ``hermes kanban …`` argparse dispatch.
 

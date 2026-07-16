@@ -220,6 +220,7 @@ export const en: Translations = {
       'nav.skills': 'Open skills',
       'nav.messaging': 'Open messaging',
       'nav.artifacts': 'Open artifacts',
+      'nav.kanban': 'Open kanban board',
       'nav.cron': 'Open scheduled jobs',
       'nav.agents': 'Open agents',
       'session.new': 'New session',
@@ -1547,6 +1548,7 @@ export const en: Translations = {
       'new-session': 'New session',
       skills: 'Capabilities',
       messaging: 'Messaging',
+      kanban: 'Kanban',
       artifacts: 'Artifacts'
     },
     searchAria: 'Search sessions',

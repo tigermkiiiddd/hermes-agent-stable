@@ -66,8 +66,10 @@ function Harness({
   activeSessionIdRef: activeSessionIdRefProp,
   busyRef,
   getRouteToken,
+  handleSkinCommand,
   onReady,
   onSeedState,
+  openKanban,
   openMemoryGraph,
   refreshSessions,
   requestGateway,
@@ -82,7 +84,9 @@ function Harness({
   busyRef?: MutableRefObject<boolean>
   getRouteToken?: () => string
   onReady: (handle: HarnessHandle) => void
+  handleSkinCommand?: (arg: string) => string
   onSeedState?: (state: Record<string, unknown>) => void
+  openKanban?: () => void
   openMemoryGraph?: () => void
   refreshSessions: () => Promise<void>
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
@@ -118,6 +122,7 @@ function Harness({
     createBackendSessionForSend: createBackendSessionForSend ?? (async () => RUNTIME_SESSION_ID),
     getRouteToken: getRouteToken ?? (() => 'token'),
     handleSkinCommand: () => '',
+    openKanban: openKanban ?? (() => undefined),
     openMemoryGraph: openMemoryGraph ?? (() => undefined),
     refreshSessions,
     requestGateway,

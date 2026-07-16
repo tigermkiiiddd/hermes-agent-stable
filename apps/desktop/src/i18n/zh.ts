@@ -215,6 +215,7 @@ export const zh: Translations = {
       'nav.skills': '打开技能',
       'nav.messaging': '打开消息',
       'nav.artifacts': '打开制品',
+      'nav.kanban': '打开看板',
       'nav.cron': '打开定时任务',
       'nav.agents': '打开智能体',
       'session.new': '新建会话',
@@ -1725,6 +1726,7 @@ export const zh: Translations = {
       'new-session': '新建会话',
       skills: '技能与工具',
       messaging: '消息平台',
+      kanban: '看板',
       artifacts: '产物'
     },
     searchAria: '搜索会话',
