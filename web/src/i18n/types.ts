@@ -987,5 +987,20 @@ export interface Translations {
       confirmMany?: string;
       dropHint?: string;
     };
+    newTaskTitle?: string;
+    taskTitleLabel?: string;
+    assigneeLabel?: string;
+    assigneeLabelHint?: string;
+    skillsLabel?: string;
+    skillsLabelHint?: string;
+    parentLabel?: string;
+    parentLabelHint?: string;
+    boardSettings?: string;
+    boardSettingsTitle?: string;
+    boardSettingsTitleFor?: string;
+    projectDirectoryOverrideHint?: string;
+    saving?: string;
+    commentHint?: string;
+    commentHintTitle?: string;
   };
 }

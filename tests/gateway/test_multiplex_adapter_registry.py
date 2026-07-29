@@ -1,8 +1,14 @@
 """Phase 3: secondary-profile adapter registry + same-token conflict detection."""
 import logging
+import asyncio
+from contextlib import contextmanager
+from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
+import gateway.run as gateway_run
+from gateway.config import GatewayConfig, Platform, PlatformConfig
 from gateway.run import GatewayRunner
 
 
@@ -34,6 +40,22 @@ class TestCredentialFingerprint:
             def __init__(self):
                 self.bot_token = "alt-token"
         assert GatewayRunner._adapter_credential_fingerprint(_AltAdapter()) is not None
+
+    def test_reads_photon_project_secret(self):
+        class _PhotonAdapter:
+            def __init__(self, secret):
+                self._project_secret = secret
+
+        fp1 = GatewayRunner._adapter_credential_fingerprint(
+            _PhotonAdapter("shared-project-secret")
+        )
+        fp2 = GatewayRunner._adapter_credential_fingerprint(
+            _PhotonAdapter("shared-project-secret")
+        )
+
+        assert fp1 == fp2
+        assert fp1 is not None
+        assert "shared-project-secret" not in fp1
 
     def test_reads_platform_config_token(self):
         class _Config:
@@ -142,6 +164,245 @@ class TestProfileMessageHandler:
 
         await handler(_Evt())
         assert seen["profile"] == "writer"
+
+
+class _SecondaryRecoveryAdapter:
+    platform = Platform.DISCORD
+
+    def __init__(self, *, retryable=True):
+        self.fatal_error_retryable = retryable
+        self.fatal_error_code = "transport_stale" if retryable else "auth_failed"
+        self.fatal_error_message = "Gateway transport stale"
+        self.connected = False
+        self.disconnected = False
+
+    async def disconnect(self):
+        self.disconnected = True
+
+    def set_message_handler(self, handler):
+        self.message_handler = handler
+
+    def set_fatal_error_handler(self, handler):
+        self.fatal_error_handler = handler
+
+    def set_session_store(self, store):
+        self.session_store = store
+
+    def set_busy_session_handler(self, handler):
+        self.busy_session_handler = handler
+
+    def set_topic_recovery_fn(self, handler):
+        self.topic_recovery_fn = handler
+
+    def set_authorization_check(self, handler):
+        self.authorization_check = handler
+
+
+def _secondary_recovery_runner(*, running=True):
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.config = GatewayConfig(multiplex_profiles=True)
+    runner._running = running
+    runner._profile_adapters = {}
+    runner._profile_failed_platforms = {}
+    runner._background_tasks = set()
+    runner.session_store = object()
+    runner._handle_active_session_busy_message = object()
+    runner._recover_telegram_topic_thread_id = object()
+    runner._busy_text_mode = "queue"
+    runner._make_adapter_auth_check = lambda platform, profile_name=None: object()
+    runner._adapter_disconnect_timeout_secs = lambda: 0
+    runner._sync_voice_mode_state_to_adapter = lambda adapter: None
+    return runner
+
+
+def _install_secondary_reconnect_context(monkeypatch, runner, adapter, scoped_homes=None):
+    @contextmanager
+    def fake_scope(profile_home):
+        if scoped_homes is not None:
+            scoped_homes.append(Path(profile_home))
+        yield
+
+    monkeypatch.setattr(gateway_run, "_profile_runtime_scope", fake_scope)
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_profile_dir", lambda name: Path("/profiles") / name
+    )
+    monkeypatch.setattr(
+        "gateway.config.load_gateway_config",
+        lambda: GatewayConfig(
+            multiplex_profiles=True,
+            platforms={
+                Platform.DISCORD: PlatformConfig(
+                    enabled=True, token="profile-token"
+                )
+            },
+        ),
+    )
+    monkeypatch.setattr(runner, "_create_adapter", lambda platform, config: adapter)
+
+
+class TestSecondaryProfileFatalRecovery:
+    @pytest.mark.asyncio
+    async def test_retryable_secondary_fatal_reconnects_with_its_profile_scope(
+        self, monkeypatch
+    ):
+        runner = _secondary_recovery_runner()
+        stale = _SecondaryRecoveryAdapter()
+        replacement = _SecondaryRecoveryAdapter()
+        runner._profile_adapters["reviewer"] = {Platform.DISCORD: stale}
+        scoped_homes: list[Path] = []
+        _install_secondary_reconnect_context(
+            monkeypatch, runner, replacement, scoped_homes
+        )
+
+        async def connect(adapter, platform, *, is_reconnect=False):
+            assert adapter is replacement
+            assert platform is Platform.DISCORD
+            assert is_reconnect is True
+            replacement.connected = True
+            return True
+
+        monkeypatch.setattr(runner, "_connect_adapter_with_timeout", connect)
+        await runner._handle_profile_adapter_fatal_error(
+            "reviewer", Platform.DISCORD, stale
+        )
+
+        assert stale.disconnected is True
+        assert Platform.DISCORD not in runner._profile_adapters["reviewer"]
+        tasks = list(runner._background_tasks)
+        assert len(tasks) == 1
+        await tasks[0]
+        assert runner._profile_adapters["reviewer"][Platform.DISCORD] is replacement
+        assert scoped_homes
+        assert all(path == Path("/profiles/reviewer") for path in scoped_homes)
+
+    @pytest.mark.asyncio
+    async def test_secondary_reconnect_cancellation_disposes_partial_adapter(
+        self, monkeypatch
+    ):
+        runner = _secondary_recovery_runner()
+        runner._profile_failed_platforms["reviewer"] = {}
+        partial = _SecondaryRecoveryAdapter()
+        _install_secondary_reconnect_context(monkeypatch, runner, partial)
+        connect_started = asyncio.Event()
+
+        async def connect(adapter, platform, *, is_reconnect=False):
+            connect_started.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(runner, "_connect_adapter_with_timeout", connect)
+        task = asyncio.create_task(
+            runner._run_secondary_profile_reconnect("reviewer", Platform.DISCORD)
+        )
+        runner._profile_failed_platforms["reviewer"][Platform.DISCORD] = task
+        await connect_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert partial.disconnected is True
+        assert runner._profile_failed_platforms == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("connect_result", [True, False], ids=["success", "failure"])
+    async def test_secondary_reconnect_does_not_publish_after_shutdown(
+        self, monkeypatch, connect_result
+    ):
+        runner = _secondary_recovery_runner()
+        runner._profile_failed_platforms["reviewer"] = {}
+        replacement = _SecondaryRecoveryAdapter()
+        _install_secondary_reconnect_context(monkeypatch, runner, replacement)
+        connect_started = asyncio.Event()
+        release_connect = asyncio.Event()
+
+        async def connect(adapter, platform, *, is_reconnect=False):
+            connect_started.set()
+            await release_connect.wait()
+            return connect_result
+
+        monkeypatch.setattr(runner, "_connect_adapter_with_timeout", connect)
+        task = asyncio.create_task(
+            runner._run_secondary_profile_reconnect("reviewer", Platform.DISCORD)
+        )
+        runner._profile_failed_platforms["reviewer"][Platform.DISCORD] = task
+        await connect_started.wait()
+        runner._running = False
+        release_connect.set()
+        await asyncio.wait_for(task, timeout=0.2)
+
+        assert runner._profile_adapters == {}
+        assert replacement.disconnected is True
+        assert runner._profile_failed_platforms == {}
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancels_secondary_reconnect_before_registry_teardown(self):
+        runner = _secondary_recovery_runner()
+        runner._profile_failed_platforms["reviewer"] = {}
+        runner._adapter_disconnect_timeout_secs = lambda: 0.1
+        started = asyncio.Event()
+        partial = _SecondaryRecoveryAdapter()
+
+        async def reconnect():
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await runner._safe_adapter_disconnect(partial, Platform.DISCORD)
+                raise
+
+        task = asyncio.create_task(reconnect())
+        runner._profile_failed_platforms["reviewer"][Platform.DISCORD] = task
+        await started.wait()
+        await runner._cancel_secondary_profile_reconnect_tasks()
+
+        assert task.cancelled()
+        assert partial.disconnected is True
+        assert runner._profile_failed_platforms == {}
+
+    @pytest.mark.asyncio
+    async def test_secondary_fatal_during_shutdown_does_not_schedule_reconnect(self):
+        runner = _secondary_recovery_runner(running=False)
+        adapter = _SecondaryRecoveryAdapter()
+        runner._profile_adapters = {"reviewer": {Platform.DISCORD: adapter}}
+        scheduled = []
+        runner._schedule_secondary_profile_reconnect = lambda *args: scheduled.append(args)
+
+        await runner._handle_profile_adapter_fatal_error(
+            "reviewer", Platform.DISCORD, adapter
+        )
+
+        assert adapter.disconnected is True
+        assert Platform.DISCORD not in runner._profile_adapters["reviewer"]
+        assert scheduled == []
+
+    def test_secondary_reconnect_scheduler_is_noop_after_shutdown(self, monkeypatch):
+        runner = _secondary_recovery_runner(running=False)
+        created = []
+
+        def create_task(coro, *, name):
+            coro.close()
+            created.append(name)
+            return AsyncMock()
+
+        monkeypatch.setattr(asyncio, "create_task", create_task)
+        runner._schedule_secondary_profile_reconnect(
+            "reviewer", Platform.DISCORD, _SecondaryRecoveryAdapter()
+        )
+
+        assert created == []
+        assert runner._profile_failed_platforms == {}
+
+    @pytest.mark.asyncio
+    async def test_nonretryable_secondary_fatal_is_not_restarted(self):
+        runner = _secondary_recovery_runner()
+        adapter = _SecondaryRecoveryAdapter(retryable=False)
+        runner._profile_adapters = {"reviewer": {Platform.DISCORD: adapter}}
+
+        await runner._handle_profile_adapter_fatal_error(
+            "reviewer", Platform.DISCORD, adapter
+        )
+
+        assert adapter.disconnected is True
+        assert runner._background_tasks == set()
 
 
 class TestSecondaryProfileConfigHandling:
@@ -473,8 +734,10 @@ class TestSecondaryProfileConfigHandling:
         assert connect_calls == [(relay, Platform.RELAY)]
 
     @pytest.mark.asyncio
-    async def test_secondary_same_config_token_is_refused(self, monkeypatch):
-        """Adapters that keep their token on config still trip the mux guard."""
+    async def test_secondary_same_config_token_is_refused_without_disconnect(
+        self, monkeypatch
+    ):
+        """A never-connected duplicate must not disturb shared live state."""
         from gateway.config import GatewayConfig, Platform, PlatformConfig
 
         class _ConfigTokenAdapter:
@@ -517,8 +780,217 @@ class TestSecondaryProfileConfigHandling:
         )
 
         assert connected == 0
-        assert duplicate.disconnected is True
+        assert duplicate.disconnected is False
         assert runner._profile_adapters["reviewer"] == {}
+
+    @pytest.mark.asyncio
+    async def test_secondary_distinct_photon_credentials_same_port_are_refused(
+        self, monkeypatch
+    ):
+        """The sidecar listener is exclusive even when credentials differ."""
+        from gateway.config import GatewayConfig, Platform, PlatformConfig
+
+        class _PhotonAdapter:
+            def __init__(self, secret, port=8789):
+                self._project_secret = secret
+                self._sidecar_bind = "127.0.0.1"
+                self._sidecar_port = port
+                self.platform = Platform("photon")
+                self.connected = False
+                self.disconnected = False
+
+            async def connect(self):
+                self.connected = True
+                raise AssertionError("conflicting sidecar must not connect")
+
+            async def disconnect(self):
+                self.disconnected = True
+
+        runner = GatewayRunner.__new__(GatewayRunner)
+        runner.config = GatewayConfig(multiplex_profiles=True)
+        runner._profile_adapters = {}
+
+        photon = Platform("photon")
+        reviewer_cfg = GatewayConfig(multiplex_profiles=True)
+        reviewer_cfg.platforms = {photon: PlatformConfig(enabled=True)}
+        primary = _PhotonAdapter("primary-secret")
+        duplicate = _PhotonAdapter("different-secret")
+        claimed = {
+            GatewayRunner._adapter_listener_claim(photon, primary): "default"
+        }
+
+        monkeypatch.setattr("gateway.config.load_gateway_config", lambda: reviewer_cfg)
+        monkeypatch.setattr(runner, "_create_adapter", lambda p, c: duplicate)
+
+        connected = await runner._start_one_profile_adapters(
+            "reviewer", "/tmp/x", claimed
+        )
+
+        assert connected == 0
+        assert duplicate.connected is False
+        assert duplicate.disconnected is False
+        assert runner._profile_adapters["reviewer"] == {}
+
+    @pytest.mark.asyncio
+    async def test_secondary_distinct_photon_credentials_distinct_ports_connect(
+        self, monkeypatch
+    ):
+        """Multiplexing remains supported when Photon sidecars cannot collide."""
+        from gateway.config import GatewayConfig, Platform, PlatformConfig
+
+        class _PhotonAdapter:
+            def __init__(self, secret, port):
+                self._project_secret = secret
+                self._sidecar_bind = "127.0.0.1"
+                self._sidecar_port = port
+                self.platform = Platform("photon")
+                self.connected = False
+                self.disconnected = False
+                self.config = PlatformConfig(enabled=True)
+
+            def __getattr__(self, name):
+                if name.startswith("set_"):
+                    return lambda *args, **kwargs: None
+                raise AttributeError(name)
+
+            async def disconnect(self):
+                self.disconnected = True
+
+        runner = GatewayRunner.__new__(GatewayRunner)
+        runner.config = GatewayConfig(multiplex_profiles=True)
+        runner._profile_adapters = {}
+        runner.session_store = None
+        runner._busy_text_mode = "queue"
+
+        photon = Platform("photon")
+        reviewer_cfg = GatewayConfig(multiplex_profiles=True)
+        reviewer_cfg.platforms = {photon: PlatformConfig(enabled=True)}
+        primary = _PhotonAdapter("primary-secret", 8789)
+        secondary = _PhotonAdapter("different-secret", 8790)
+        claimed = {
+            GatewayRunner._adapter_listener_claim(photon, primary): "default"
+        }
+
+        async def _connect(adapter, platform):
+            adapter.connected = True
+            return True
+
+        monkeypatch.setattr("gateway.config.load_gateway_config", lambda: reviewer_cfg)
+        monkeypatch.setattr(runner, "_create_adapter", lambda p, c: secondary)
+        monkeypatch.setattr(runner, "_connect_adapter_with_timeout", _connect)
+        monkeypatch.setattr(
+            runner, "_make_adapter_auth_check", lambda p, **kwargs: None
+        )
+
+        connected = await runner._start_one_profile_adapters(
+            "reviewer", "/tmp/x", claimed
+        )
+
+        assert connected == 1
+        assert secondary.connected is True
+        assert secondary.disconnected is False
+        assert runner._profile_adapters["reviewer"][photon] is secondary
+
+    @pytest.mark.asyncio
+    async def test_failed_photon_connect_releases_listener_for_later_profile(
+        self, monkeypatch
+    ):
+        """A failed sidecar must not reserve an endpoint it never owned."""
+        from gateway.config import GatewayConfig, Platform, PlatformConfig
+
+        class _PhotonAdapter:
+            def __init__(self, secret, should_connect):
+                self._project_secret = secret
+                self._sidecar_bind = "127.0.0.1"
+                self._sidecar_port = 8789
+                self.platform = Platform("photon")
+                self.should_connect = should_connect
+                self.disconnected = False
+                self.config = PlatformConfig(enabled=True)
+
+            def __getattr__(self, name):
+                if name.startswith("set_"):
+                    return lambda *args, **kwargs: None
+                raise AttributeError(name)
+
+            async def disconnect(self):
+                self.disconnected = True
+
+        runner = GatewayRunner.__new__(GatewayRunner)
+        runner.config = GatewayConfig(multiplex_profiles=True)
+        runner._profile_adapters = {}
+        runner.session_store = None
+        runner._busy_text_mode = "queue"
+
+        photon = Platform("photon")
+        profile_cfg = GatewayConfig(multiplex_profiles=True)
+        profile_cfg.platforms = {photon: PlatformConfig(enabled=True)}
+        failed = _PhotonAdapter("failed-secret", False)
+        later = _PhotonAdapter("later-secret", True)
+        adapters = iter((failed, later))
+        claimed = {}
+
+        async def _connect(adapter, platform):
+            return adapter.should_connect
+
+        monkeypatch.setattr("gateway.config.load_gateway_config", lambda: profile_cfg)
+        monkeypatch.setattr(runner, "_create_adapter", lambda p, c: next(adapters))
+        monkeypatch.setattr(runner, "_connect_adapter_with_timeout", _connect)
+        monkeypatch.setattr(
+            runner, "_make_adapter_auth_check", lambda p, **kwargs: None
+        )
+
+        first = await runner._start_one_profile_adapters("broken", "/tmp/x", claimed)
+        second = await runner._start_one_profile_adapters("later", "/tmp/y", claimed)
+
+        assert first == 0
+        assert failed.disconnected is True
+        assert second == 1
+        assert runner._profile_adapters["later"][photon] is later
+
+    @pytest.mark.asyncio
+    async def test_failed_primary_photon_listener_is_reserved_for_retry(
+        self, monkeypatch
+    ):
+        """A retrying primary keeps secondaries off its sidecar endpoint."""
+        from gateway.config import GatewayConfig, Platform
+
+        runner = GatewayRunner.__new__(GatewayRunner)
+        runner.config = GatewayConfig(multiplex_profiles=True)
+        runner.adapters = {}
+        runner._profile_adapters = {}
+        runner.pairing_stores = {}
+
+        photon = Platform("photon")
+        listener_claim = ("listener", "photon", "127.0.0.1", 8789)
+        runner._failed_platforms = {
+            photon: {
+                "config": object(),
+                "attempts": 1,
+                "next_retry": 0,
+                "listener_claim": listener_claim,
+            }
+        }
+        seen = {}
+
+        async def _start(profile_name, profile_home, claimed):
+            seen.update(claimed)
+            return 0
+
+        monkeypatch.setattr(
+            "hermes_cli.profiles.profiles_to_serve",
+            lambda multiplex=True: (("default", "/tmp/default"), ("reviewer", "/tmp/reviewer")),
+        )
+        monkeypatch.setattr(
+            "hermes_cli.profiles.get_active_profile_name", lambda: "default"
+        )
+        monkeypatch.setattr("gateway.status.write_runtime_status", lambda **kwargs: None)
+        monkeypatch.setattr(runner, "_start_one_profile_adapters", _start)
+
+        connected = await runner._start_secondary_profile_adapters()
+
+        assert connected == 0
+        assert seen[listener_claim] == "default"
 
     def test_port_binding_set_covers_known_listeners(self):
         from gateway.run import _PORT_BINDING_PLATFORM_VALUES
