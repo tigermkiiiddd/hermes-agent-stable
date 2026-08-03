@@ -147,7 +147,7 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     route: SKILLS_ROUTE,
     keybindActionId: 'nav.skills'
   },
-{
+  {
     id: 'messaging',
     label: '',
     icon: props => <Codicon name="comment" {...props} />,

@@ -47,10 +47,18 @@ interface BoardInfo {
 }
 
 const COLUMNS = ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done']
+
 const COLUMN_LABELS: Record<string, string> = {
-  triage: 'Triage', todo: 'Todo', scheduled: 'Scheduled', ready: 'Ready',
-  running: 'Running', blocked: 'Blocked', review: 'Review', done: 'Done'
+  triage: 'Triage',
+  todo: 'Todo',
+  scheduled: 'Scheduled',
+  ready: 'Ready',
+  running: 'Running',
+  blocked: 'Blocked',
+  review: 'Review',
+  done: 'Done'
 }
+
 const COLUMN_COLORS: Record<string, string> = {
   triage: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
   todo: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
@@ -63,11 +71,23 @@ const COLUMN_COLORS: Record<string, string> = {
 }
 
 function ago(ts: number) {
-  if (!ts) return ''
+  if (!ts) {
+    return ''
+  }
   const sec = Math.floor(Date.now() / 1000 - ts)
-  if (sec < 60) return `${sec}s`
-  if (sec < 3600) return `${Math.floor(sec / 60)}m`
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h`
+
+  if (sec < 60) {
+    return `${sec}s`
+  }
+
+  if (sec < 3600) {
+    return `${Math.floor(sec / 60)}m`
+  }
+
+  if (sec < 86400) {
+    return `${Math.floor(sec / 3600)}h`
+  }
+
   return `${Math.floor(sec / 86400)}d`
 }
 
@@ -75,13 +95,23 @@ function ago(ts: number) {
 
 async function api(path: string, options?: { method?: string; body?: unknown }) {
   const fn = (window as any).hermesDesktop?.api
-  if (!fn) throw new Error('Desktop API not available')
+
+  if (!fn) {
+    throw new Error('Desktop API not available')
+  }
+
   return fn({ path, method: options?.method || 'GET', body: options?.body ? JSON.stringify(options.body) : undefined })
 }
 
 /* ── Task Detail Panel ── */
 
-function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
+function TaskDetailPanel({
+  task,
+  board,
+  onClose,
+  onUpdate,
+  onDelete
+}: {
   task: TaskItem
   board: string | null
   onClose: () => void
@@ -97,30 +127,46 @@ function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
 
   const handleSave = useCallback(async () => {
     setSaving(true)
+
     try {
       await api(`/api/plugins/kanban/tasks/${task.id}`, {
         method: 'PATCH',
-        body: { title: title.trim(), description: description.trim() || null, status, assignee: assignee.trim() || null }
+        body: {
+          title: title.trim(),
+          description: description.trim() || null,
+          status,
+          assignee: assignee.trim() || null
+        }
       })
       setEditing(false)
       onUpdate()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+    }
+
     setSaving(false)
   }, [task.id, title, description, status, assignee, onUpdate])
 
   const handleDelete = useCallback(async () => {
-    if (!confirm(`Delete "${task.title}"?`)) return
+    if (!confirm(`Delete "${task.title}"?`)) {
+      return
+    }
+
     try {
       await api(`/api/plugins/kanban/tasks/${task.id}`, { method: 'DELETE' })
       onDelete()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+    }
   }, [task.id, task.title, onDelete])
 
   return (
     <div className="flex w-96 shrink-0 flex-col border-l bg-background">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">Task Detail</span>
-        <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+        <Button onClick={onClose} size="sm" variant="ghost">
+          ✕
+        </Button>
       </div>
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
@@ -128,7 +174,7 @@ function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Title</span>
           {editing ? (
-            <Input value={title} onChange={e => setTitle(e.target.value)} />
+            <Input onChange={e => setTitle(e.target.value)} value={title} />
           ) : (
             <span className="text-sm font-medium">{task.title}</span>
           )}
@@ -140,13 +186,17 @@ function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
           {editing ? (
             <select
               className="rounded border bg-transparent px-2 py-1 text-sm"
-              value={status}
               onChange={e => setStatus(e.target.value)}
+              value={status}
             >
-              {COLUMNS.map(c => <option key={c} value={c}>{COLUMN_LABELS[c] || c}</option>)}
+              {COLUMNS.map(c => (
+                <option key={c} value={c}>
+                  {COLUMN_LABELS[c] || c}
+                </option>
+              ))}
             </select>
           ) : (
-            <Badge variant="outline" className={cn('w-fit', COLUMN_COLORS[task.status])}>
+            <Badge className={cn('w-fit', COLUMN_COLORS[task.status])} variant="outline">
               {COLUMN_LABELS[task.status] || task.status}
             </Badge>
           )}
@@ -156,7 +206,7 @@ function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Assignee</span>
           {editing ? (
-            <Input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="profile name" />
+            <Input onChange={e => setAssignee(e.target.value)} placeholder="profile name" value={assignee} />
           ) : (
             <span className="text-sm">{task.assignee || <span className="text-muted-foreground/50">—</span>}</span>
           )}
@@ -167,10 +217,10 @@ function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
           <span className="text-xs text-muted-foreground">Description</span>
           {editing ? (
             <Textarea
-              value={description}
               onChange={e => setDescription(e.target.value)}
-              rows={4}
               placeholder="Task description..."
+              rows={4}
+              value={description}
             />
           ) : (
             <p className="text-sm leading-relaxed text-muted-foreground/80">
@@ -191,17 +241,31 @@ function TaskDetailPanel({ task, board, onClose, onUpdate, onDelete }: {
       <div className="flex items-center gap-2 border-t px-4 py-3">
         {editing ? (
           <>
-            <Button size="sm" onClick={handleSave} disabled={saving || !title.trim()}>
+            <Button disabled={saving || !title.trim()} onClick={handleSave} size="sm">
               {saving ? 'Saving...' : 'Save'}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setTitle(task.title); setDescription(task.description || ''); setStatus(task.status); setAssignee(task.assignee || '') }}>
+            <Button
+              onClick={() => {
+                setEditing(false)
+                setTitle(task.title)
+                setDescription(task.description || '')
+                setStatus(task.status)
+                setAssignee(task.assignee || '')
+              }}
+              size="sm"
+              variant="ghost"
+            >
               Cancel
             </Button>
           </>
         ) : (
           <>
-            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit</Button>
-            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={handleDelete}>Delete</Button>
+            <Button onClick={() => setEditing(true)} size="sm" variant="secondary">
+              Edit
+            </Button>
+            <Button className="text-red-500 hover:text-red-600" onClick={handleDelete} size="sm" variant="ghost">
+              Delete
+            </Button>
           </>
         )}
       </div>
@@ -219,34 +283,65 @@ function CreateTaskForm({ board, onDone }: { board: string | null; onDone: () =>
   const [creating, setCreating] = useState(false)
 
   const handleCreate = useCallback(async () => {
-    if (!title.trim()) return
+    if (!title.trim()) {
+      return
+    }
     setCreating(true)
+
     try {
       await api('/api/plugins/kanban/tasks', {
         method: 'POST',
-        body: { title: title.trim(), description: description.trim() || null, status, assignee: assignee.trim() || null }
+        body: {
+          title: title.trim(),
+          description: description.trim() || null,
+          status,
+          assignee: assignee.trim() || null
+        }
       })
       onDone()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+    }
+
     setCreating(false)
   }, [title, description, status, assignee, onDone])
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
       <span className="text-sm font-medium">New Task</span>
-      <Input placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-      <Textarea placeholder="Description (optional)" value={description} onChange={e => setDescription(e.target.value)} rows={2} />
+      <Input autoFocus onChange={e => setTitle(e.target.value)} placeholder="Title" value={title} />
+      <Textarea
+        onChange={e => setDescription(e.target.value)}
+        placeholder="Description (optional)"
+        rows={2}
+        value={description}
+      />
       <div className="flex gap-2">
-        <select className="rounded border bg-transparent px-2 py-1 text-sm" value={status} onChange={e => setStatus(e.target.value)}>
-          {COLUMNS.map(c => <option key={c} value={c}>{COLUMN_LABELS[c] || c}</option>)}
+        <select
+          className="rounded border bg-transparent px-2 py-1 text-sm"
+          onChange={e => setStatus(e.target.value)}
+          value={status}
+        >
+          {COLUMNS.map(c => (
+            <option key={c} value={c}>
+              {COLUMN_LABELS[c] || c}
+            </option>
+          ))}
         </select>
-        <Input placeholder="Assignee (optional)" value={assignee} onChange={e => setAssignee(e.target.value)} className="flex-1" />
+        <Input
+          className="flex-1"
+          onChange={e => setAssignee(e.target.value)}
+          placeholder="Assignee (optional)"
+          value={assignee}
+        />
       </div>
       <div className="flex gap-2">
-        <Button size="sm" onClick={handleCreate} disabled={creating || !title.trim()}>
+        <Button disabled={creating || !title.trim()} onClick={handleCreate} size="sm">
           {creating ? 'Creating...' : 'Create'}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onDone}>Cancel</Button>
+        <Button onClick={onDone} size="sm" variant="ghost">
+          Cancel
+        </Button>
       </div>
     </div>
   )
@@ -254,7 +349,11 @@ function CreateTaskForm({ board, onDone }: { board: string | null; onDone: () =>
 
 /* ── Task Card ── */
 
-function TaskCard({ task, onClick, onStatusChange }: {
+function TaskCard({
+  task,
+  onClick,
+  onStatusChange
+}: {
   task: TaskItem
   onClick: () => void
   onStatusChange: (status: string) => void
@@ -276,7 +375,11 @@ function TaskCard({ task, onClick, onStatusChange }: {
         <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground/70">{task.description}</p>
       )}
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        {task.assignee && <Badge variant="secondary" className="text-[10px]">{task.assignee}</Badge>}
+        {task.assignee && (
+          <Badge className="text-[10px]" variant="secondary">
+            {task.assignee}
+          </Badge>
+        )}
         {task.comment_count > 0 && <span className="text-[10px] text-muted-foreground">💬 {task.comment_count}</span>}
         {task.warnings && <span className="text-[10px] text-amber-500">⚠</span>}
       </div>
@@ -285,15 +388,31 @@ function TaskCard({ task, onClick, onStatusChange }: {
       <div className="hidden group-hover:flex items-center gap-1 pt-1 border-t border-border/50 mt-1">
         <button
           className={cn('text-[10px] px-1.5 py-0.5 rounded hover:bg-accent', !canMoveLeft && 'opacity-20')}
-          onClick={e => { e.stopPropagation(); if (canMoveLeft) onStatusChange(COLUMNS[colIdx - 1]) }}
           disabled={!canMoveLeft}
-        >◀</button>
+          onClick={e => {
+            e.stopPropagation()
+
+            if (canMoveLeft) {
+              onStatusChange(COLUMNS[colIdx - 1])
+            }
+          }}
+        >
+          ◀
+        </button>
         <span className="text-[10px] text-muted-foreground flex-1 text-center">{COLUMN_LABELS[task.status]}</span>
         <button
           className={cn('text-[10px] px-1.5 py-0.5 rounded hover:bg-accent', !canMoveRight && 'opacity-20')}
-          onClick={e => { e.stopPropagation(); if (canMoveRight) onStatusChange(COLUMNS[colIdx + 1]) }}
           disabled={!canMoveRight}
-        >▶</button>
+          onClick={e => {
+            e.stopPropagation()
+
+            if (canMoveRight) {
+              onStatusChange(COLUMNS[colIdx + 1])
+            }
+          }}
+        >
+          ▶
+        </button>
       </div>
     </div>
   )
@@ -301,7 +420,12 @@ function TaskCard({ task, onClick, onStatusChange }: {
 
 /* ── Column ── */
 
-function KanbanColumn({ name, tasks, onTaskClick, onStatusChange }: {
+function KanbanColumn({
+  name,
+  tasks,
+  onTaskClick,
+  onStatusChange
+}: {
   name: string
   tasks: TaskItem[]
   onTaskClick: (task: TaskItem) => void
@@ -309,15 +433,23 @@ function KanbanColumn({ name, tasks, onTaskClick, onStatusChange }: {
 }) {
   const label = COLUMN_LABELS[name] || name
   const color = COLUMN_COLORS[name] || 'bg-gray-500/10 text-gray-300'
+
   return (
     <div className="flex w-72 shrink-0 flex-col gap-3">
       <div className={cn('flex items-center gap-2 rounded-md border px-3 py-2', color)}>
         <span className="text-xs font-semibold uppercase tracking-wider">{label}</span>
-        <Badge variant="outline" className="ml-auto text-[10px]">{tasks.length}</Badge>
+        <Badge className="ml-auto text-[10px]" variant="outline">
+          {tasks.length}
+        </Badge>
       </div>
       <div className="flex flex-col gap-2 min-h-16">
         {tasks.map(task => (
-          <TaskCard key={task.id} task={task} onClick={() => onTaskClick(task)} onStatusChange={s => onStatusChange(task, s)} />
+          <TaskCard
+            key={task.id}
+            onClick={() => onTaskClick(task)}
+            onStatusChange={s => onStatusChange(task, s)}
+            task={task}
+          />
         ))}
       </div>
     </div>
@@ -343,15 +475,20 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
   const loadBoard = useCallback(async () => {
     setLoading(true)
     setError(null)
+
     try {
       const qs = new URLSearchParams()
-      if (tenantFilter) qs.set('tenant', tenantFilter)
+
+      if (tenantFilter) {
+        qs.set('tenant', tenantFilter)
+      }
       const path = `/api/plugins/kanban/board${qs.toString() ? '?' + qs.toString() : ''}`
       const result = await api(path)
       setBoard(result as BoardData)
     } catch (err: any) {
       setError(err?.message || String(err))
     }
+
     setLoading(false)
   }, [tenantFilter])
 
@@ -360,35 +497,49 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
       const result = await api('/api/plugins/kanban/boards')
       const data = result as { boards: BoardInfo[]; current?: string }
       setBoardList(data.boards || [])
+
       if (data.current && !currentBoard) {
         setCurrentBoard(data.current)
       }
+
       // If no boards exist, show create form
       if (!data.boards || data.boards.length === 0) {
         setShowNewBoard(true)
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [])
 
-  useEffect(() => { void loadBoard(); void loadBoardList() }, [loadBoard, loadBoardList])
+  useEffect(() => {
+    void loadBoard()
+    void loadBoardList()
+  }, [loadBoard, loadBoardList])
 
   const handleStatusChange = useCallback(async (task: TaskItem, newStatus: string) => {
     try {
       await api(`/api/plugins/kanban/tasks/${task.id}`, { method: 'PATCH', body: { status: newStatus } })
       // Optimistic update
       setBoard(prev => {
-        if (!prev) return prev
+        if (!prev) {
+          return prev
+        }
+
         const cols = prev.columns.map(col => ({
           ...col,
-          tasks: col.name === task.status
-            ? col.tasks.filter(t => t.id !== task.id)
-            : col.name === newStatus
-              ? [...col.tasks, { ...task, status: newStatus, updated_at: Math.floor(Date.now() / 1000) }]
-              : col.tasks
+          tasks:
+            col.name === task.status
+              ? col.tasks.filter(t => t.id !== task.id)
+              : col.name === newStatus
+                ? [...col.tasks, { ...task, status: newStatus, updated_at: Math.floor(Date.now() / 1000) }]
+                : col.tasks
         }))
+
         return { ...prev, columns: cols }
       })
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+    }
   }, [])
 
   const handleCreateDone = useCallback(() => {
@@ -408,7 +559,11 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
 
   const handleCreateBoard = useCallback(async () => {
     const slug = newBoardName.trim().toLowerCase().replace(/\s+/g, '-')
-    if (!slug) return
+
+    if (!slug) {
+      return
+    }
+
     try {
       await api('/api/plugins/kanban/boards', {
         method: 'POST',
@@ -419,18 +574,27 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
       setCurrentBoard(slug)
       await loadBoardList()
       await loadBoard()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+    }
   }, [newBoardName, loadBoard, loadBoardList])
 
   // Filtered tasks per column
-  const filteredColumns = board?.columns.map(col => ({
-    ...col,
-    tasks: col.tasks.filter(t => {
-      if (searchFilter && !t.title.toLowerCase().includes(searchFilter.toLowerCase()) &&
-          !(t.description?.toLowerCase().includes(searchFilter.toLowerCase()))) return false
-      return true
-    })
-  })) ?? []
+  const filteredColumns =
+    board?.columns.map(col => ({
+      ...col,
+      tasks: col.tasks.filter(t => {
+        if (
+          searchFilter &&
+          !t.title.toLowerCase().includes(searchFilter.toLowerCase()) &&
+          !t.description?.toLowerCase().includes(searchFilter.toLowerCase())
+        ) {
+          return false
+        }
+
+        return true
+      })
+    })) ?? []
 
   const totalTasks = filteredColumns.reduce((s, c) => s + c.tasks.length, 0)
 
@@ -448,9 +612,16 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
   if (error && !board) {
     return (
       <Panel onClose={onClose}>
-        <PanelHeader title="Kanban Board" subtitle="Error" />
-        <PanelEmpty icon="warning" title="Failed to load board" description={error}
-          action={<Button variant="secondary" size="sm" onClick={loadBoard}>Retry</Button>}
+        <PanelHeader subtitle="Error" title="Kanban Board" />
+        <PanelEmpty
+          action={
+            <Button onClick={loadBoard} size="sm" variant="secondary">
+              Retry
+            </Button>
+          }
+          description={error}
+          icon="warning"
+          title="Failed to load board"
         />
       </Panel>
     )
@@ -461,32 +632,42 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
     return (
       <Panel onClose={onClose}>
         <PanelHeader
-          title="Kanban Board"
-          subtitle={showNewBoard ? 'Create your first board' : (boardList.length === 0 ? 'No board yet' : 'No tasks yet')}
           actions={
-            boardList.length > 0 && !showNewBoard
-              ? <Button variant="secondary" size="sm" onClick={() => setShowCreate(true)}>+ New Task</Button>
-              : undefined
+            boardList.length > 0 && !showNewBoard ? (
+              <Button onClick={() => setShowCreate(true)} size="sm" variant="secondary">
+                + New Task
+              </Button>
+            ) : undefined
           }
+          subtitle={showNewBoard ? 'Create your first board' : boardList.length === 0 ? 'No board yet' : 'No tasks yet'}
+          title="Kanban Board"
         />
         <div className="flex flex-1 flex-col gap-4 p-4">
           {showNewBoard && (
             <div className="mx-auto flex w-full max-w-sm flex-col gap-4 pt-12">
               <PanelEmpty
+                description="Create a board to start tracking tasks."
                 icon="project"
                 title="No kanban board yet"
-                description="Create a board to start tracking tasks."
               />
-              <form onSubmit={e => { e.preventDefault(); void handleCreateBoard() }} className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+              <form
+                className="flex flex-col gap-3 rounded-lg border bg-card p-4"
+                onSubmit={e => {
+                  e.preventDefault()
+                  void handleCreateBoard()
+                }}
+              >
                 <span className="text-sm font-medium">New Board</span>
                 <Input
+                  autoFocus
+                  onChange={e => setNewBoardName(e.target.value)}
                   placeholder="Board name (e.g. Sprint 42)"
                   value={newBoardName}
-                  onChange={e => setNewBoardName(e.target.value)}
-                  autoFocus
                 />
                 <div className="flex gap-2">
-                  <Button type="submit" disabled={!newBoardName.trim()}>Create</Button>
+                  <Button disabled={!newBoardName.trim()} type="submit">
+                    Create
+                  </Button>
                 </div>
               </form>
             </div>
@@ -495,8 +676,14 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
             <CreateTaskForm board={currentBoard} onDone={handleCreateDone} />
           )}
           {!showNewBoard && boardList.length > 0 && !showCreate && (
-            <PanelEmpty icon="inbox" title="No tasks yet"
-              action={<Button variant="secondary" size="sm" onClick={() => setShowCreate(true)}>+ New Task</Button>}
+            <PanelEmpty
+              action={
+                <Button onClick={() => setShowCreate(true)} size="sm" variant="secondary">
+                  + New Task
+                </Button>
+              }
+              icon="inbox"
+              title="No tasks yet"
             />
           )}
         </div>
@@ -508,9 +695,44 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
   return (
     <Panel onClose={onClose}>
       <PanelHeader
-        title={
+        actions={
           <div className="flex items-center gap-2">
-            <span>Kanban Board</span>
+            {boardList.length > 0 && (
+              <select
+                className="rounded border bg-transparent px-1.5 py-0.5 text-xs"
+                onChange={async e => {
+                  const slug = e.target.value
+
+                  if (slug === '__new__') {
+                    setShowNewBoard(true)
+
+                    return
+                  }
+
+                  if (slug) {
+                    setCurrentBoard(slug)
+                    await api(`/api/plugins/kanban/boards/${slug}/switch`, { method: 'POST' })
+                    void loadBoard()
+                    void loadBoardList()
+                  }
+                }}
+                value={currentBoard || ''}
+              >
+                {boardList.map(b => (
+                  <option key={b.slug} value={b.slug}>
+                    {b.display_name || b.slug}
+                  </option>
+                ))}
+                <option disabled>───</option>
+                <option value="__new__">+ Create new...</option>
+              </select>
+            )}
+            <Button onClick={() => setShowCreate(true)} size="sm" variant="secondary">
+              + New Task
+            </Button>
+            <Button onClick={loadBoard} size="sm" variant="ghost">
+              ↻
+            </Button>
           </div>
         }
         subtitle={
@@ -519,64 +741,44 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
             {board.tenants.length > 1 && (
               <select
                 className="rounded border bg-transparent px-1.5 py-0.5 text-xs"
-                value={tenantFilter}
                 onChange={e => setTenantFilter(e.target.value)}
+                value={tenantFilter}
               >
                 <option value="">All tenants</option>
-                {board.tenants.map(t => <option key={t} value={t}>{t}</option>)}
+                {board.tenants.map(t => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
               </select>
             )}
             {/* Search */}
             <Input
-              placeholder="Search..."
               className="h-6 w-28 text-xs"
-              value={searchFilter}
               onChange={e => setSearchFilter(e.target.value)}
+              placeholder="Search..."
+              value={searchFilter}
             />
             <span className="text-xs text-muted-foreground">{totalTasks} tasks</span>
           </div>
         }
-        actions={
+        title={
           <div className="flex items-center gap-2">
-            {boardList.length > 0 && (
-              <select
-                className="rounded border bg-transparent px-1.5 py-0.5 text-xs"
-                value={currentBoard || ''}
-                onChange={async e => {
-                  const slug = e.target.value
-                  if (slug === '__new__') {
-                    setShowNewBoard(true)
-                    return
-                  }
-                  if (slug) {
-                    setCurrentBoard(slug)
-                    await api(`/api/plugins/kanban/boards/${slug}/switch`, { method: 'POST' })
-                    void loadBoard()
-                    void loadBoardList()
-                  }
-                }}
-              >
-                {boardList.map(b => <option key={b.slug} value={b.slug}>{b.display_name || b.slug}</option>)}
-                <option disabled>───</option>
-                <option value="__new__">+ Create new...</option>
-              </select>
-            )}
-            <Button variant="secondary" size="sm" onClick={() => setShowCreate(true)}>+ New Task</Button>
-            <Button variant="ghost" size="sm" onClick={loadBoard}>↻</Button>
+            <span>Kanban Board</span>
           </div>
         }
       />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Columns */}
-        <div className={cn("flex flex-1 gap-4 overflow-x-auto p-4", showNewBoard && "opacity-30 pointer-events-none")}>
+        <div className={cn('flex flex-1 gap-4 overflow-x-auto p-4', showNewBoard && 'opacity-30 pointer-events-none')}>
           {filteredColumns.map(col => (
             <KanbanColumn
               key={col.name}
               name={col.name}
-              tasks={col.tasks}
-              onTaskClick={setSelectedTask}
               onStatusChange={handleStatusChange}
+              onTaskClick={setSelectedTask}
+              tasks={col.tasks}
             />
           ))}
         </div>
@@ -584,17 +786,33 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
         {/* Create board overlay */}
         {showNewBoard && (
           <div className="absolute inset-0 z-50 flex items-start justify-center bg-background/60 pt-24">
-            <form onSubmit={e => { e.preventDefault(); void handleCreateBoard() }} className="flex w-full max-w-sm flex-col gap-3 rounded-lg border bg-card p-4 shadow-lg">
+            <form
+              className="flex w-full max-w-sm flex-col gap-3 rounded-lg border bg-card p-4 shadow-lg"
+              onSubmit={e => {
+                e.preventDefault()
+                void handleCreateBoard()
+              }}
+            >
               <span className="text-sm font-medium">New Board</span>
               <Input
+                autoFocus
+                onChange={e => setNewBoardName(e.target.value)}
                 placeholder="Board name (e.g. Sprint 42)"
                 value={newBoardName}
-                onChange={e => setNewBoardName(e.target.value)}
-                autoFocus
               />
               <div className="flex gap-2">
-                <Button type="submit" disabled={!newBoardName.trim()}>Create</Button>
-                <Button variant="ghost" onClick={() => { setShowNewBoard(false); setNewBoardName('') }}>Cancel</Button>
+                <Button disabled={!newBoardName.trim()} type="submit">
+                  Create
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowNewBoard(false)
+                    setNewBoardName('')
+                  }}
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
               </div>
             </form>
           </div>
@@ -610,11 +828,11 @@ export function KanbanView({ onClose, setStatusbarItemGroup }: { onClose?: () =>
         {/* Task detail panel */}
         {selectedTask && !showCreate && (
           <TaskDetailPanel
-            task={selectedTask}
             board={currentBoard}
             onClose={() => setSelectedTask(null)}
-            onUpdate={handleUpdate}
             onDelete={handleDelete}
+            onUpdate={handleUpdate}
+            task={selectedTask}
           />
         )}
       </div>
