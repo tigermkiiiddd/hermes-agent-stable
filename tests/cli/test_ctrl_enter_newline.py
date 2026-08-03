@@ -134,7 +134,11 @@ def test_preserve_path_binds_escape_c_j_for_win32_ctrl_enter():
             kb.add("c-j")(lambda e: None)
             kb.add("escape", "c-j")(lambda e: None)
         keys = _bindings(kb)
-        assert ("enter",) in keys
+        # prompt_toolkit normalized Enter to the control-m key code, so a
+        # plain-Enter binding surfaces as ("c-m",) and Alt+Enter as
+        # ("escape", "c-m"). Assert against the normalized form so the test
+        # stays true whether the code binds 'enter' or 'c-m'.
+        assert ("enter",) in keys or ("c-m",) in keys
         assert ("c-j",) in keys
         assert ("escape", "c-j") in keys
-        assert ("escape", "enter") in keys
+        assert ("escape", "enter") in keys or ("escape", "c-m") in keys
