@@ -527,7 +527,8 @@ export default function CronPage() {
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
   const { t, locale } = useI18n();
-  const { setEnd } = usePageHeader();
+    const ui = useDashboardUi();
+    const { setEnd } = usePageHeader();
 
   // Translation surface for the human-readable schedule describer.
   // English ordinals are a special case ("1st", "2nd", "23rd"); every

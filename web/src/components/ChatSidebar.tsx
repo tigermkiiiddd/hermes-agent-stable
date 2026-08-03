@@ -35,6 +35,7 @@ import { api, buildWsUrl } from "@/lib/api";
 import { titleFromSessionInfoPayload } from "@/lib/chat-title";
 
 import { cn } from "@/lib/utils";
+import { useDashboardUi } from "@/i18n/dashboard-ui";
 import { AlertCircle, ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -106,6 +107,7 @@ export function ChatSidebar({
   // counter is the dependency on purpose — it's not read in the memo body,
   // it's the signal that says "rebuild the client".
   const [version, setVersion] = useState(0);
+  const ui = useDashboardUi();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const gw = useMemo(() => new GatewayClient(), [version]);
 

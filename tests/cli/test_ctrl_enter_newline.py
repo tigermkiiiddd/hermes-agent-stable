@@ -115,3 +115,26 @@ def test_install_ctrl_enter_alias_idempotent():
     install_ctrl_enter_alias()
     second = install_ctrl_enter_alias()
     assert second == 0  # no further changes after first install
+
+
+def test_preserve_path_binds_escape_c_j_for_win32_ctrl_enter():
+    """Native Win32 Ctrl+Enter is Escape+c-j; bare c-j alone is not enough."""
+    import cli as cli_mod
+    from prompt_toolkit.key_binding import KeyBindings
+
+    def _bindings(kb: KeyBindings):
+        return {tuple(b.keys) for b in kb.bindings}
+
+    with patch.object(cli_mod.sys, "platform", "win32"):
+        kb = KeyBindings()
+        cli_mod._bind_prompt_submit_keys(kb, lambda e: None)
+        # Replicate the newline bindings from HermesCLI.run setup.
+        kb.add("escape", "enter")(lambda e: None)
+        if cli_mod._preserve_ctrl_enter_newline():
+            kb.add("c-j")(lambda e: None)
+            kb.add("escape", "c-j")(lambda e: None)
+        keys = _bindings(kb)
+        assert ("enter",) in keys
+        assert ("c-j",) in keys
+        assert ("escape", "c-j") in keys
+        assert ("escape", "enter") in keys

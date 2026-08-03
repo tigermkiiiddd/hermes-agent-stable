@@ -3,13 +3,95 @@
 Imported once at CLI startup. Each helper installs a small mapping into
 prompt_toolkit's `ANSI_SEQUENCES` so byte sequences emitted by modern
 keyboard protocols (Kitty / xterm `modifyOtherKeys`) decode to existing
-key tuples Hermes already binds.
+key tuples Hermes already binds. On native Windows, an additional patch
+rewrites Shift+Enter console events (the Win32 API exposes the Shift bit
+even when the VT byte stream cannot).
 
 Kept in a standalone module — separate from `cli.py` — so the registrations
 can be unit-tested without importing the whole CLI runtime.
 """
 
 from __future__ import annotations
+
+import sys
+from typing import Any, List, Sequence
+
+
+_WIN32_ENTER_MODIFIERS_INSTALLED = False
+
+
+def rewrite_win32_enter_modifiers(
+    keys: Sequence[Any],
+    *,
+    shift: bool,
+    ctrl: bool,
+) -> List[Any]:
+    """Rewrite native-Windows Enter chords so modifiers stay distinguishable.
+
+    Stock prompt_toolkit maps bare Shift+Enter to a single ``ControlM`` —
+    identical to plain Enter — so Hermes cannot bind it to newline. When the
+    console reports Shift without Ctrl on a lone ``ControlM``, rewrite it to
+    the ``(Escape, ControlM)`` tuple Alt+Enter already produces.
+
+    Ctrl+Enter is already rewritten by stock prompt_toolkit to
+    ``(Escape, ControlJ)``; left untouched here.
+
+    Pure helper — the Win32 patch and unit tests both call this.
+    """
+    try:
+        from prompt_toolkit.key_binding.key_processor import KeyPress
+        from prompt_toolkit.keys import Keys
+    except Exception:
+        return list(keys)
+
+    if (
+        shift
+        and not ctrl
+        and len(keys) == 1
+        and getattr(keys[0], "key", None) == Keys.ControlM
+    ):
+        return [KeyPress(Keys.Escape, ""), keys[0]]
+    return list(keys)
+
+
+def install_win32_enter_modifiers() -> bool:
+    """Patch Win32 console input so Shift+Enter is distinct from Enter.
+
+    On native Windows, ``ConsoleInputReader`` sees ``SHIFT_PRESSED`` on the
+    key event but still emits plain ``ControlM`` for Shift+Enter. Wrap
+    ``_event_to_key_presses`` to route that chord through the Alt+Enter
+    newline path (``Escape`` + ``ControlM``).
+
+    No-op on non-Windows, when Win32 input is unavailable, or when already
+    installed. Returns True iff the patch was applied this call.
+    """
+    global _WIN32_ENTER_MODIFIERS_INSTALLED
+    if _WIN32_ENTER_MODIFIERS_INSTALLED:
+        return False
+    if sys.platform != "win32":
+        return False
+    try:
+        from prompt_toolkit.input.win32 import ConsoleInputReader
+    except Exception:
+        return False
+
+    original = ConsoleInputReader._event_to_key_presses
+
+    def _event_to_key_presses(self, ev):  # noqa: ANN001 — prompt_toolkit types
+        keys = original(self, ev)
+        try:
+            state = ev.ControlKeyState
+            shift = bool(state & self.SHIFT_PRESSED)
+            ctrl = bool(
+                (state & self.LEFT_CTRL_PRESSED) or (state & self.RIGHT_CTRL_PRESSED)
+            )
+        except Exception:
+            return keys
+        return rewrite_win32_enter_modifiers(keys, shift=shift, ctrl=ctrl)
+
+    ConsoleInputReader._event_to_key_presses = _event_to_key_presses  # type: ignore[method-assign]
+    _WIN32_ENTER_MODIFIERS_INSTALLED = True
+    return True
 
 
 def install_shift_enter_alias() -> int:

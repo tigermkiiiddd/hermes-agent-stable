@@ -15,7 +15,8 @@ import {
   Cpu,
   MoreVertical,
   Pencil,
-  Settings2,
+  Package,
+  Sparkles,
   Terminal,
   Trash2,
   Users,
@@ -24,23 +25,7 @@ import {
 import spinners from "unicode-animations";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
-import type {
-  ProfileInfo,
-  ProfileSettings,
-  ProfileSkillEntry,
-} from "@/lib/api";
-
-function normalizeProfileSettings(raw: ProfileSettings): ProfileSettings {
-  const assigned = raw.skills_assigned ?? raw.skills ?? [];
-  const available = raw.skills_available ?? [];
-  return {
-    ...raw,
-    skills_assigned: assigned,
-    skills_available: available,
-    skills: assigned,
-  };
-}
-import { ModelPickerDialog } from "@/components/ModelPickerDialog";
+import type { ActiveProfileInfo, ProfileInfo } from "@/lib/api";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
@@ -56,7 +41,6 @@ import {
   SelectOption,
 } from "@nous-research/ui/ui/components/select";
 import { Checkbox } from "@nous-research/ui/ui/components/checkbox";
-import { Switch } from "@nous-research/ui/ui/components/switch";
 import { useI18n } from "@/i18n";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { cn, themedBody } from "@/lib/utils";
@@ -360,19 +344,33 @@ export default function ProfilesPage() {
   // newer state when the user switches profiles or closes the editor.
   const activeSoulRequest = useRef<string | null>(null);
 
-  const [configuringFor, setConfiguringFor] = useState<string | null>(null);
-  const [profileSettings, setProfileSettings] = useState<ProfileSettings | null>(
-    null,
-  );
-  const [profileSettingsMeta, setProfileSettingsMeta] = useState<{
-    hadAvailableField: boolean;
-  } | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(false);
-  const [modelPickerFor, setModelPickerFor] = useState<string | null>(null);
-  const [togglingSkills, setTogglingSkills] = useState<Set<string>>(new Set());
-  const activeSettingsRequest = useRef<string | null>(null);
+  // Inline description editor state
+  const [editingDescFor, setEditingDescFor] = useState<string | null>(null);
+  const [descText, setDescText] = useState("");
+  const [descSaving, setDescSaving] = useState(false);
+  const [describing, setDescribing] = useState(false);
+  // Tracks the latest description request (save / auto-describe) so a late
+  // response can't overwrite state for a different, newly-opened editor.
+  const activeDescRequest = useRef<string | null>(null);
+  // Counts in-flight save / auto-describe requests so the saving indicator
+  // is only cleared when the last concurrent request settles.
+  const descSavingCount = useRef(0);
+  const describingCount = useRef(0);
 
-  const load = useCallback(() => {
+  // Inline model editor state
+  const [editingModelFor, setEditingModelFor] = useState<string | null>(null);
+  const [modelEditChoice, setModelEditChoice] = useState("");
+  const [modelSaving, setModelSaving] = useState(false);
+
+  // Per-profile "set active" in-flight name
+  const [settingActive, setSettingActive] = useState<string | null>(null);
+
+  const modelKey = (provider: string | null, model: string | null) =>
+    provider && model ? `${provider}\u0000${model}` : "";
+
+  const loadModelChoices = useCallback(() => {
+    if (modelChoices !== null || modelChoicesLoading.current) return;
+    modelChoicesLoading.current = true;
     api
       .getModelOptions()
       .then((res) => {
@@ -493,122 +491,35 @@ export default function ProfilesPage() {
     }
   };
 
-  const loadProfileSettings = useCallback(
-    async (name: string) => {
-      activeSettingsRequest.current = name;
-      setSettingsLoading(true);
-      setProfileSettings(null);
-      setProfileSettingsMeta(null);
-      try {
-        const raw = await api.getProfileSettings(name);
-        const settings = normalizeProfileSettings(raw);
-        if (activeSettingsRequest.current === name) {
-          setProfileSettings(settings);
-          setProfileSettingsMeta({
-            hadAvailableField: "skills_available" in raw,
-          });
-        }
-      } catch (e) {
-        if (activeSettingsRequest.current === name) {
-          showToast(`${t.status.error}: ${e}`, "error");
-        }
-      } finally {
-        if (activeSettingsRequest.current === name) {
-          setSettingsLoading(false);
-        }
-      }
-    },
-    [showToast, t.status.error],
-  );
-
-  const openConfigure = useCallback(
-    async (name: string) => {
-      if (configuringFor === name) {
-        activeSettingsRequest.current = null;
-        setConfiguringFor(null);
-        setProfileSettings(null);
-        setProfileSettingsMeta(null);
-        return;
-      }
-      setConfiguringFor(name);
-      setEditingSoulFor(null);
-      await loadProfileSettings(name);
-    },
-    [configuringFor, loadProfileSettings],
-  );
-
-  const handleToggleProfileSkill = async (
-    profileName: string,
-    skill: ProfileSkillEntry,
-  ) => {
-    setTogglingSkills((prev) => new Set(prev).add(skill.name));
+  const handleSetActive = async (name: string) => {
+    setSettingActive(name);
     try {
-      await api.toggleProfileSkill(profileName, skill.name, !skill.enabled);
-      setProfileSettings((prev) => {
-        if (!prev) return prev;
-        const mapAssigned = (list: ProfileSkillEntry[]) =>
-          list.map((s) =>
-            s.name === skill.name ? { ...s, enabled: !s.enabled } : s,
-          );
-        return {
-          ...prev,
-          skills_assigned: mapAssigned(prev.skills_assigned),
-          skills: mapAssigned(prev.skills_assigned),
-        };
-      });
-      load();
+      // The backend normalizes/validates the name; trust the canonical
+      // value it returns rather than the raw input.
+      const { active } = await api.setActiveProfile(name);
+      setProfile(active);
+      showToast(
+        `${L.activeSet}: ${active} — ${L.activeSetHint.replace("{name}", active)}`,
+        "success",
+      );
+      setActiveInfo((prev) =>
+        prev ? { ...prev, active } : { active, current: active },
+      );
     } catch (e) {
       showToast(`${t.status.error}: ${e}`, "error");
     } finally {
-      setTogglingSkills((prev) => {
-        const next = new Set(prev);
-        next.delete(skill.name);
-        return next;
-      });
+      setSettingActive(null);
     }
   };
 
-  const handleAddProfileSkill = async (
-    profileName: string,
-    skill: ProfileSkillEntry,
-  ) => {
-    setTogglingSkills((prev) => new Set(prev).add(`add:${skill.name}`));
-    try {
-      await api.addProfileSkill(profileName, skill.name);
-      showToast(`${t.profiles.skillAdded}: ${skill.name}`, "success");
-      await loadProfileSettings(profileName);
-      load();
-    } catch (e) {
-      showToast(`${t.status.error}: ${e}`, "error");
-    } finally {
-      setTogglingSkills((prev) => {
-        const next = new Set(prev);
-        next.delete(`add:${skill.name}`);
-        return next;
-      });
-    }
-  };
-
-  const handleRemoveProfileSkill = async (
-    profileName: string,
-    skill: ProfileSkillEntry,
-  ) => {
-    setTogglingSkills((prev) => new Set(prev).add(`remove:${skill.name}`));
-    try {
-      await api.removeProfileSkill(profileName, skill.name);
-      showToast(`${t.profiles.skillRemoved}: ${skill.name}`, "success");
-      await loadProfileSettings(profileName);
-      load();
-    } catch (e) {
-      showToast(`${t.status.error}: ${e}`, "error");
-    } finally {
-      setTogglingSkills((prev) => {
-        const next = new Set(prev);
-        next.delete(`remove:${skill.name}`);
-        return next;
-      });
-    }
-  };
+  // Closes whichever editor dialog is open (model / description / SOUL).
+  const closeEditor = useCallback(() => {
+    activeSoulRequest.current = null;
+    activeDescRequest.current = null;
+    setEditingModelFor(null);
+    setEditingDescFor(null);
+    setEditingSoulFor(null);
+  }, []);
 
   const openSoulEditor = useCallback(
     async (name: string) => {
@@ -618,9 +529,8 @@ export default function ProfilesPage() {
         closeEditor();
         return;
       }
-      activeSettingsRequest.current = null;
-      setConfiguringFor(null);
-      setProfileSettings(null);
+      setEditingDescFor(null);
+      setEditingModelFor(null);
       setEditingSoulFor(name);
       setSoulText("");
       activeSoulRequest.current = name;
@@ -1114,33 +1024,18 @@ export default function ProfilesPage() {
           </Card>
         )}
 
-        {profiles.map((p) => {
-          const isRenaming = renamingFrom === p.name;
-          const isEditingSoul = editingSoulFor === p.name;
-          const isConfiguring = configuringFor === p.name;
-          const settings =
-            isConfiguring && profileSettings ? profileSettings : null;
-          const assignedSkills = settings?.skills_assigned ?? [];
-          const availableSkills = settings?.skills_available ?? [];
-          const sharedSkillLibrary =
-            settings?.profile_uses_shared_library ?? p.is_default;
-          const libraryEmptyHint = settingsLoading
-            ? null
-            : sharedSkillLibrary
-              ? t.profiles.skillsLibrarySharedDefault
-              : availableSkills.length === 0
-                ? profileSettingsMeta?.hadAvailableField
-                  ? t.profiles.skillsLibraryAllAdded
-                  : t.profiles.skillsLibraryUnavailable
-                : null;
-          const enabledSkillCount =
-            assignedSkills.filter((s) => s.enabled).length ?? 0;
-          return (
-            <Card key={p.name}>
-              <CardContent className="flex items-start gap-4 py-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    {isRenaming ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {profiles.map((p) => {
+            const isRenaming = renamingFrom === p.name;
+            const isEditingSoul = editingSoulFor === p.name;
+            const isEditingDesc = editingDescFor === p.name;
+            const isEditingModel = editingModelFor === p.name;
+            const active = isActive(p);
+            return (
+              <Card key={p.name} className="h-full">
+                <CardContent className="flex h-full flex-col gap-2 py-4">
+                  {isRenaming ? (
+                    <div className="flex flex-col gap-2">
                       <Input
                         autoFocus
                         value={renameTo}
@@ -1194,32 +1089,10 @@ export default function ProfilesPage() {
                     </div>
                   ) : (
                     <>
-                      <Button
-                        ghost
-                        size="icon"
-                        title={t.profiles.configure}
-                        aria-label={t.profiles.configure}
-                        aria-expanded={isConfiguring}
-                        onClick={() => openConfigure(p.name)}
-                      >
-                        {isConfiguring ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <Settings2 className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        ghost
-                        size="icon"
-                        title={t.profiles.editSoul}
-                        aria-label={t.profiles.editSoul}
-                        onClick={() => openSoulEditor(p.name)}
-                      >
-                        {isEditingSoul ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <span aria-hidden className="text-xs font-bold">
-                            S
+                      <div className="flex items-start gap-2">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                          <span className="font-medium text-sm truncate">
+                            {p.name}
                           </span>
 
                           {active && (
@@ -1351,323 +1224,143 @@ export default function ProfilesPage() {
               </Card>
             );
           })}
-                  </div>
-                </div>
+        </div>
+      </div>
 
-                {/* Editor dialog — model / description / SOUL for the selected profile */}
-                {editorName && (
-                  <div
-                    ref={editorModalRef}
-                    className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 p-4"
-                    onClick={(e) => e.target === e.currentTarget && closeEditor()}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="profile-editor-title"
-                  >
-                    <div
-                      className={cn(
-                        themedBody,
-                        "relative w-full max-w-lg border border-border bg-card shadow-2xl flex flex-col max-h-[90vh]",
-                      )}
+      {/* Editor dialog — model / description / SOUL for the selected profile */}
+      {editorName && (
+        <div
+          ref={editorModalRef}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 p-4"
+          onClick={(e) => e.target === e.currentTarget && closeEditor()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-editor-title"
+        >
+          <div
+            className={cn(
+              themedBody,
+              "relative w-full max-w-lg border border-border bg-card shadow-2xl flex flex-col max-h-[90vh]",
+            )}
+          >
+            <Button
+              ghost
+              size="icon"
+              onClick={closeEditor}
+              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+              aria-label={t.common.close}
+            >
+              <X />
+            </Button>
+
+            <header className="p-5 pb-3 border-b border-border">
+              <h2
+                id="profile-editor-title"
+                className="font-mondwest text-display text-base tracking-wider"
+              >
+                {editorKind === "model"
+                  ? L.editModel
+                  : editorKind === "desc"
+                    ? L.description
+                    : t.profiles.soulSection}
+                <span className="text-muted-foreground"> · {editorName}</span>
+              </h2>
+            </header>
+
+            <div
+              className={cn(
+                "p-5 grid gap-4",
+                editorKind === "soul" && "min-h-0 overflow-y-auto",
+              )}
+            >
+              {editorKind === "model" &&
+                (modelChoices !== null && modelChoices.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{L.modelNone}</p>
+                ) : (
+                  <>
+                    <Select
+                      value={modelEditChoice}
+                      disabled={modelChoices === null}
+                      placeholder={
+                        modelChoices === null ? L.modelLoading : L.modelSelect
+                      }
+                      onValueChange={setModelEditChoice}
                     >
+                      {(modelChoices ?? []).map((c) => (
+                        <SelectOption
+                          key={`${c.provider}\u0000${c.model}`}
+                          value={`${c.provider}\u0000${c.model}`}
+                        >
+                          {c.label}
+                        </SelectOption>
+                      ))}
+                    </Select>
+
+                    <div className="flex justify-end">
                       <Button
-                        ghost
-                        size="icon"
-                        onClick={closeEditor}
-                        className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-                        aria-label="Close"
+                        size="sm"
+                        className="uppercase"
+                        onClick={() => handleSaveModel(editorName)}
+                        disabled={
+                          modelSaving ||
+                          !modelChoices?.some(
+                            (c) =>
+                              `${c.provider}\u0000${c.model}` ===
+                              modelEditChoice,
+                          )
+                        }
                       >
-                        <X />
+                        {modelSaving ? t.common.saving : t.common.save}
                       </Button>
-
-                        {isConfiguring && (
-                <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-4">
-                  <p className="text-xs text-muted-foreground">
-                                      {t.profiles.configureTitle}
-                                    </p>
-
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground mb-0.5">
-                        {t.profiles.model}
-                        {settings?.provider
-                          ? ` · ${t.profiles.provider}: ${settings.provider}`
-                          : ""}
-                      </p>
-                      <p className="text-sm font-mono truncate">
-                        {settingsLoading
-                          ? t.common.loading
-                          : settings?.model || t.profiles.noModelSet}
-                      </p>
                     </div>
+                  </>
+                ))}
+
+              {editorKind === "desc" && (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label
+                      htmlFor="profile-desc-editor"
+                      className="font-mondwest text-display text-xs tracking-wider text-muted-foreground"
+                    >
+                      {L.description}
+                    </Label>
+
                     <Button
                       size="sm"
-                      className="uppercase shrink-0"
-                      disabled={settingsLoading}
-                      onClick={() => setModelPickerFor(p.name)}
+                      ghost
+                      className="gap-1.5"
+                      disabled={describing}
+                      onClick={() => handleAutoDescribe(editorName)}
                     >
-                      {t.profiles.changeModel}
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {describing ? L.generating : L.autoGenerate}
                     </Button>
                   </div>
 
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className="text-xs text-muted-foreground">
-                        {t.profiles.skills}
-                      </Label>
-                      {assignedSkills.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {t.profiles.skillsEnabled
-                            .replace("{enabled}", String(enabledSkillCount))
-                            .replace(
-                              "{total}",
-                              String(assignedSkills.length),
-                            )}
-                        </span>
-                      )}
-                    </div>
-                    {settingsLoading ? (
-                      <p className="text-xs text-muted-foreground">
-                        {t.common.loading}
-                      </p>
-                    ) : (
-                      <>
-                        <div className="flex flex-col gap-1.5">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {t.profiles.skillsOnProfile}
-                          </p>
-                          {assignedSkills.length > 0 ? (
-                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
-                              {assignedSkills.map((skill) => (
-                                <div
-                                  key={skill.name}
-                                  className="flex items-center gap-2 px-3 py-2"
-                                >
-                                  <Switch
-                                    checked={!!skill.enabled}
-                                    disabled={
-                                      togglingSkills.has(skill.name) ||
-                                      togglingSkills.has(`remove:${skill.name}`)
-                                    }
-                                    onCheckedChange={() =>
-                                      handleToggleProfileSkill(p.name, skill)
-                                    }
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-medium truncate">
-                                      {skill.name}
-                                    </p>
-                                  </div>
-                                  <Button
-                                    ghost
-                                    size="sm"
-                                    className="h-7 text-xs uppercase shrink-0"
-                                    disabled={togglingSkills.has(
-                                      `remove:${skill.name}`,
-                                    )}
-                                    onClick={() =>
-                                      handleRemoveProfileSkill(p.name, skill)
-                                    }
-                                  >
-                                    {t.profiles.removeSkill}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              {t.profiles.noSkillsInstalled}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {t.profiles.skillsInLibrary}
-                          </p>
-                          {libraryEmptyHint ? (
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              {libraryEmptyHint}
-                            </p>
-                          ) : (
-                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
-                              {availableSkills.map((skill) => (
-                                <div
-                                  key={skill.name}
-                                  className="flex items-center gap-2 px-3 py-2"
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-medium truncate">
-                                      {skill.name}
-                                    </p>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-xs uppercase shrink-0"
-                                    disabled={togglingSkills.has(
-                                      `add:${skill.name}`,
-                                    )}
-                                    onClick={() =>
-                                      handleAddProfileSkill(p.name, skill)
-                                    }
-                                  >
-                                    {t.profiles.addSkill}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
+                  <textarea
+                    id="profile-desc-editor"
+                    className="flex min-h-[96px] w-full border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    placeholder={L.descriptionPlaceholder}
+                    value={descText}
+                    onChange={(e) => setDescText(e.target.value)}
+                  />
 
-              {isConfiguring && (
-                <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-4">
-                  <p className="text-xs text-muted-foreground">
-                    {t.profiles.configureTitle}
-                  </p>
-
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground mb-0.5">
-                        {t.profiles.model}
-                        {settings?.provider
-                          ? ` · ${t.profiles.provider}: ${settings.provider}`
-                          : ""}
-                      </p>
-                      <p className="text-sm font-mono truncate">
-                        {settingsLoading
-                          ? t.common.loading
-                          : settings?.model || t.profiles.noModelSet}
-                      </p>
-                    </div>
+                  <div className="flex justify-end">
                     <Button
                       size="sm"
-                      className="uppercase shrink-0"
-                      disabled={settingsLoading}
-                      onClick={() => setModelPickerFor(p.name)}
+                      className="uppercase"
+                      onClick={() => handleSaveDesc(editorName)}
+                      disabled={descSaving}
                     >
-                      {t.profiles.changeModel}
+                      {descSaving ? t.common.saving : t.common.save}
                     </Button>
                   </div>
-
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className="text-xs text-muted-foreground">
-                        {t.profiles.skills}
-                      </Label>
-                      {assignedSkills.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {t.profiles.skillsEnabled
-                            .replace("{enabled}", String(enabledSkillCount))
-                            .replace(
-                              "{total}",
-                              String(assignedSkills.length),
-                            )}
-                        </span>
-                      )}
-                    </div>
-                    {settingsLoading ? (
-                      <p className="text-xs text-muted-foreground">
-                        {t.common.loading}
-                      </p>
-                    ) : (
-                      <>
-                        <div className="flex flex-col gap-1.5">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {t.profiles.skillsOnProfile}
-                          </p>
-                          {assignedSkills.length > 0 ? (
-                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
-                              {assignedSkills.map((skill) => (
-                                <div
-                                  key={skill.name}
-                                  className="flex items-center gap-2 px-3 py-2"
-                                >
-                                  <Switch
-                                    checked={!!skill.enabled}
-                                    disabled={
-                                      togglingSkills.has(skill.name) ||
-                                      togglingSkills.has(`remove:${skill.name}`)
-                                    }
-                                    onCheckedChange={() =>
-                                      handleToggleProfileSkill(p.name, skill)
-                                    }
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-medium truncate">
-                                      {skill.name}
-                                    </p>
-                                  </div>
-                                  <Button
-                                    ghost
-                                    size="sm"
-                                    className="h-7 text-xs uppercase shrink-0"
-                                    disabled={togglingSkills.has(
-                                      `remove:${skill.name}`,
-                                    )}
-                                    onClick={() =>
-                                      handleRemoveProfileSkill(p.name, skill)
-                                    }
-                                  >
-                                    {t.profiles.removeSkill}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              {t.profiles.noSkillsInstalled}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {t.profiles.skillsInLibrary}
-                          </p>
-                          {libraryEmptyHint ? (
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              {libraryEmptyHint}
-                            </p>
-                          ) : (
-                            <div className="max-h-40 overflow-y-auto border border-border divide-y divide-border">
-                              {availableSkills.map((skill) => (
-                                <div
-                                  key={skill.name}
-                                  className="flex items-center gap-2 px-3 py-2"
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-medium truncate">
-                                      {skill.name}
-                                    </p>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-xs uppercase shrink-0"
-                                    disabled={togglingSkills.has(
-                                      `add:${skill.name}`,
-                                    )}
-                                    onClick={() =>
-                                      handleAddProfileSkill(p.name, skill)
-                                    }
-                                  >
-                                    {t.profiles.addSkill}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
+                </>
               )}
 
-              {isEditingSoul && (
-                <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-2">
+              {editorKind === "soul" && (
+                <>
                   <Label
                     htmlFor="profile-soul-editor"
                     className="font-mondwest text-display text-xs tracking-wider text-muted-foreground"
@@ -1695,25 +1388,9 @@ export default function ProfilesPage() {
                   </div>
                 </>
               )}
-            </Card>
-          );
-        })}
-      </div>
-
-      {modelPickerFor && (
-        <ModelPickerDialog
-          loader={api.getModelOptions}
-          alwaysGlobal
-          title={t.profiles.changeModel}
-          onApply={async ({ provider, model }) => {
-            await api.setProfileModel(modelPickerFor, provider, model);
-            showToast(t.profiles.modelSaved, "success");
-            setModelPickerFor(null);
-            await loadProfileSettings(modelPickerFor);
-            load();
-          }}
-          onClose={() => setModelPickerFor(null)}
-        />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
