@@ -142,99 +142,47 @@ ACHIEVEMENTS: List[Dict[str, Any]] = [
 ]
 
 
-ZH_CATEGORY_TRANSLATIONS = {
-    "Agent Autonomy": "代理自主",
-    "Debugging Chaos": "调试混沌",
-    "Vibe Coding": "氛围编程",
-    "Hermes Native": "Hermes 原生",
-    "Research/Web": "研究 / Web",
-    "Tool Mastery": "工具掌控",
-    "Model Lore": "模型图鉴",
-    "Lifestyle": "使用习惯",
-}
+def _data_dir() -> Path:
+    """Durable data root (``<hermes home>/plugin-data/hermes-achievements/``).
 
-ZH_TIER_LABELS = {
-    "Copper": "青铜",
-    "Silver": "白银",
-    "Gold": "黄金",
-    "Diamond": "钻石",
-    "Olympian": "奥林匹斯",
-}
+    Was the install tree (``plugins/hermes-achievements/``) before the
+    plugin-data convention existed — state parked there died on
+    ``hermes plugins remove``/``update``. Legacy files migrate on first read.
+    """
+    try:
+        from plugins.plugin_storage import plugin_data_dir
 
-ZH_ACHIEVEMENT_TRANSLATIONS = {
-    "let_him_cook": {"name": "让他做完", "description": "让 Hermes 在单次会话里跑完整条严肃的自主工具链。"},
-    "autonomous_avalanche": {"name": "自主雪崩", "description": "跨多个会话累计海量 Hermes 工具调用。"},
-    "toolchain_maxxer": {"name": "工具链极客", "description": "在一次会话里使用足够多种不同的 Hermes 工具。"},
-    "full_send": {"name": "全力开冲", "description": "一次真实运行里同时动用终端、文件和 Web/浏览器。"},
-    "subagent_commander": {"name": "子代理指挥官", "description": "协调委派出去的代理工作。"},
-    "background_process_enjoyer": {"name": "后台进程爱好者", "description": "启动或控制足够多的长时间运行进程，配得上这个称号。"},
-    "cron_necromancer": {"name": "Cron 死灵法师", "description": "把定时自主任务重新召唤回人间。"},
-    "red_text_connoisseur": {"name": "红字鉴赏家", "description": "遇到足够多错误，多到开始懂红字的层次。"},
-    "stack_trace_sommelier": {"name": "堆栈追踪品鉴师", "description": "成批品鉴 traceback，而不是小口尝一尝。"},
-    "actually_read_the_logs": {"name": "真的去看日志了", "description": "反复查看日志，而不是靠猜。"},
-    "port_3000_taken": {"name": "3000 端口被占用", "description": "多次撞上开发服务器端口冲突，多到已经麻木。"},
-    "permission_denied_any_percent": {"name": "权限拒绝 Any%", "description": "高速冲进权限墙。"},
-    "dependency_hell_tourist": {"name": "依赖地狱游客", "description": "装包会失败，但生活还得继续。"},
-    "the_fix_was_restarting": {"name": "解决方法是重启", "description": "在足够多的错误簇之后重启，终于能算一门技艺。"},
-    "forgot_the_env_var": {"name": "忘了环境变量", "description": "因为缺少环境变量而导致认证或配置失败。"},
-    "yaml_colon_incident": {"name": "YAML 冒号事故", "description": "配置语法开始反噬。"},
-    "docker_name_collision": {"name": "Docker 名称冲突", "description": "容器名已经存在。那当然。"},
-    "supposed_to_be_quick": {"name": "本来应该很快", "description": "一个小需求最终变成整段远征。"},
-    "one_more_small_change": {"name": "再改一个小地方", "description": "在一次会话里改够多文件，让“小改一下”这句话彻底失效。"},
-    "vibe_architect": {"name": "氛围架构师", "description": "在一次项目会话里触达足够广的表面。"},
-    "pixel_goblin": {"name": "像素地精", "description": "持续进行前端、CSS、SVG 或视觉调优。"},
-    "ship_first_ask_later": {"name": "先发再说", "description": "在一条严肃工具链之后继续展开 git 活动。"},
-    "css_exorcist": {"name": "CSS 驱魔师", "description": "把反复出现的样式恶魔从界面里驱逐出去。"},
-    "one_character_fix": {"name": "一个字符的修复", "description": "堆了一地错误之后，最后只是一个微小改动。痛苦，也优雅。"},
-    "skillsmith": {"name": "技能铁匠", "description": "和 Hermes 技能打交道打到处处留痕。"},
-    "skill_issue_skill_created": {"name": "有技能问题？那就造个技能。", "description": "与其反复重复，不如创建或修补可复用流程。"},
-    "memory_keeper": {"name": "记忆守护者", "description": "用 memory 或 Mnemosyne 持久保存知识。"},
-    "memory_palace": {"name": "记忆宫殿", "description": "构建一条像样的持久记忆轨迹。"},
-    "context_dragon": {"name": "上下文巨龙", "description": "反复碰到压缩、超大上下文或 token 压力。"},
-    "gateway_dweller": {"name": "网关常驻民", "description": "长期生活在网关连接的 Hermes 工作流里。"},
-    "plugin_goblin": {"name": "插件地精", "description": "使用或开发插件多到 dashboard 都能注意到。"},
-    "rollback_wizard": {"name": "回滚巫师", "description": "施放回滚/检查点恢复魔法。"},
-    "rabbit_hole_certified": {"name": "兔子洞认证", "description": "搜索或提取足够多的网页内容，足以构成一场研究型兔子洞。"},
-    "citation_goblin": {"name": "引用地精", "description": "提取足够多网页，多到像个小图书管理员。"},
-    "docs_archaeologist": {"name": "文档考古学家", "description": "一遍又一遍地翻找文档来源。"},
-    "browser_possession": {"name": "浏览器附体", "description": "反复通过自动化附体浏览器。"},
-    "terminal_goblin": {"name": "终端地精", "description": "在 shell 世界里待上足够久的时间。"},
-    "patch_wizard": {"name": "补丁巫师", "description": "用精准补丁让文件按你意志弯曲。"},
-    "file_archaeologist": {"name": "文件考古学家", "description": "靠读取和搜索在文件系统里挖掘。"},
-    "image_whisperer": {"name": "图像低语者", "description": "足够频繁地使用图像生成或视觉工具来做视觉工作。"},
-    "voice_of_the_machine": {"name": "机器之声", "description": "反复使用文本转语音或语音工具。"},
-    "model_hopper": {"name": "模型跳转者", "description": "切换或检查提供商/模型频繁到足以称为习惯。"},
-    "openrouter_enjoyer": {"name": "OpenRouter 爱好者", "description": "反复通过 OpenRouter 路由模型工作。"},
-    "codex_conjurer": {"name": "Codex 召唤师", "description": "频繁召唤 Codex 风格协助，多到像一种仪式。"},
-    "multi_model_mage": {"name": "多模型法师", "description": "在 Hermes 历史中真正用过一大批不同的模型名。"},
-    "five_model_flight": {"name": "五模型试飞", "description": "至少试过五个不同 LLM，而不是和第一个会回复的模型绑定终身。"},
-    "provider_polyglot": {"name": "提供商通晓者", "description": "在 Hermes 历史里使用来自多个提供商的模型。"},
-    "model_sommelier": {"name": "模型品鉴师", "description": "和足够多模型/提供商聊过天，聊到形成偏好。"},
-    "claude_confidant": {"name": "Claude 知己", "description": "反复把 Claude 风格的推理带进工作流。"},
-    "gemini_cartographer": {"name": "Gemini 制图师", "description": "画过足够多 Gemini 相关工作流，已经熟悉地形。"},
-    "open_weights_pilgrim": {"name": "开放权重朝圣者", "description": "通过 Hermes 会话元数据，真的和本地/开放权重模型聊过。"},
-    "toolset_cartographer": {"name": "工具集制图师", "description": "有意识地穿梭 Hermes 工具集，而不是把一切工具混成一团。"},
-    "config_surgeon": {"name": "配置外科医生", "description": "面对真实配置文件、manifest、env 文件和 dashboard 设置也能面不改色地下刀。"},
-    "rebase_acrobat": {"name": "Rebase 杂技师", "description": "处理真正的 git 历史手术：rebase、冲突、merge、fetch、push。"},
-    "test_suite_tamer": {"name": "测试套件驯兽师", "description": "运行足够多验证命令，让绿色输出也成为仪式的一部分。"},
-    "screenshot_hunter": {"name": "截图猎人", "description": "会主动截图、检查并打磨可视化证据，而不是只说“它能跑”。"},
-    "marathon_operator": {"name": "马拉松操作员", "description": "累计相当数量的 Hermes 会话。"},
-    "weekend_warrior": {"name": "周末战士", "description": "周末也频繁运行 Hermes，逐渐活成一种方式。"},
-    "night_shift_operator": {"name": "夜班操作员", "description": "反复在夜猫子时段运行会话。"},
-    "cache_hit_appreciator": {"name": "缓存命中鉴赏家", "description": "注意到或实实在在享受到 prompt/cache 行为的好处。"},
-}
+        return plugin_data_dir("hermes-achievements")
+    except Exception:
+        # Standalone dashboard import (no plugins package on sys.path):
+        # keep the plugin working with the same layout, computed locally.
+        root = get_hermes_home() / "plugin-data" / "hermes-achievements"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+
+def _data_file(name: str) -> Path:
+    path = _data_dir() / name
+    if not path.exists():
+        legacy = get_hermes_home() / "plugins" / "hermes-achievements" / name
+        if legacy.exists():
+            try:
+                path.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+            except Exception:
+                pass
+    return path
 
 
 def state_path() -> Path:
-    return get_hermes_home() / "plugins" / "hermes-achievements" / "state.json"
+    return _data_file("state.json")
 
 
 def snapshot_path() -> Path:
-    return get_hermes_home() / "plugins" / "hermes-achievements" / "scan_snapshot.json"
+    return _data_file("scan_snapshot.json")
 
 
 def checkpoint_path() -> Path:
-    return get_hermes_home() / "plugins" / "hermes-achievements" / "scan_checkpoint.json"
+    return _data_file("scan_checkpoint.json")
 
 
 def load_state() -> Dict[str, Any]:
@@ -614,159 +562,30 @@ def metric_label(metric: str) -> str:
     return METRIC_LABELS.get(metric, metric.replace("_", " "))
 
 
-ZH_METRIC_LABELS = {
-    "max_tool_calls_in_session": "单次会话中的工具调用数",
-    "max_distinct_tools_in_session": "单次会话中使用的不同 Hermes 工具数",
-    "max_terminal_calls_in_session": "单次会话中的终端调用数",
-    "max_file_tool_calls_in_session": "单次会话中的文件/搜索/补丁调用数",
-    "max_web_browser_calls_in_session": "单次会话中的网页搜索/提取或浏览器调用数",
-    "max_messages_in_session": "单次会话中的消息数",
-    "max_files_touched_in_session": "单次会话中触及的文件数",
-    "total_delegate_calls": "累计 delegate_task 调用次数",
-    "total_process_calls": "累计后台进程操作次数",
-    "total_cron_calls": "累计定时任务操作次数",
-    "total_errors": "观察到的 error/failed/traceback 消息数",
-    "traceback_events": "Traceback 或 exception 提及次数",
-    "log_read_events": "日志查看次数",
-    "port_conflict_events": "开发服务器端口冲突检测次数",
-    "permission_denied_events": "permission denied 错误次数",
-    "install_error_events": "包安装失败次数",
-    "install_success_events": "包安装后成功完成次数",
-    "restart_after_error_events": "错误簇后的重启/重载次数",
-    "env_var_error_events": "缺失认证/配置/环境变量事件数",
-    "yaml_error_events": "YAML/配置解析事故次数",
-    "docker_conflict_events": "Docker/容器名称冲突次数",
-    "frontend_activity_events": "前端/CSS/SVG/React 活动提及次数",
-    "css_activity_events": "CSS、样式、Tailwind 或 className 活动次数",
-    "git_events": "git 工作流命令次数",
-    "tiny_patch_after_errors_events": "错误簇后的小型 typo 式修复次数",
-    "skill_events": "Hermes 技能提及或工具使用次数",
-    "skill_manage_events": "skill_manage 创建/修补/删除操作次数",
-    "memory_events": "memory 或 Mnemosyne 工具事件数",
-    "memory_write_events": "持久记忆写入次数",
-    "context_events": "上下文、压缩、token 或缓存压力提及次数",
-    "gateway_events": "gateway/API/聊天平台活动次数",
-    "plugin_events": "仪表盘插件开发或使用信号次数",
-    "rollback_events": "回滚/检查点恢复提及次数",
-    "docs_activity_events": "文档/README/docs 活动次数",
-    "model_events": "模型/提供商相关活动次数",
-    "openrouter_events": "OpenRouter 提及次数",
-    "codex_events": "Codex 提及次数",
-    "cache_events": "prompt cache/cache hit 提及次数",
-    "total_web_calls": "累计 web_search/web_extract 调用次数",
-    "total_web_extract_calls": "累计 web_extract 调用次数",
-    "browser_calls": "累计浏览器自动化调用次数",
-    "total_tool_calls": "累计 Hermes 工具调用次数",
-    "total_terminal_calls": "累计终端调用次数",
-    "total_patch_calls": "累计定点补丁编辑次数",
-    "total_file_reads_searches": "累计 read_file/search_files 调用次数",
-    "image_vision_calls": "图像生成或视觉工具调用次数",
-    "tts_calls": "文本转语音或语音工具调用次数",
-    "distinct_model_count": "在会话元数据中看到的不同模型名称数",
-    "distinct_provider_count": "从会话元数据推断出的不同模型提供商数",
-    "claude_events": "Claude/Anthropic 模型提及次数",
-    "gemini_events": "Gemini/Google 模型提及次数",
-    "local_model_events": "本地/开放权重模型提及次数",
-    "local_model_chat_sessions": "模型元数据为本地/开放权重的 Hermes 会话数",
-    "toolset_events": "工具集或工具家族提及次数",
-    "config_events": "配置/环境/manifest 活动次数",
-    "git_history_events": "rebase、merge、fetch、push 或 tag 等 git 历史操作次数",
-    "test_events": "测试/检查/验证命令提及次数",
-    "screenshot_events": "截图、Playwright、PNG 或视觉检查活动次数",
-    "release_events": "发布、版本、publish 或 git tag 事件数",
-    "session_count": "Hermes 会话数",
-    "weekend_sessions": "周末启动的会话数",
-    "night_sessions": "深夜或凌晨前启动的会话数",
-}
-
-
-def normalize_locale(locale: Optional[str]) -> str:
-    value = str(locale or "en").strip().lower().replace("_", "-")
-    return "zh" if value.startswith("zh") else "en"
-
-
-def localized_tier_label(tier: Optional[str], locale: Optional[str]) -> Optional[str]:
-    if not tier:
-        return None
-    if normalize_locale(locale) == "zh":
-        return ZH_TIER_LABELS.get(tier, tier)
-    return tier
-
-
-def localized_metric_label(metric: str, locale: Optional[str]) -> str:
-    if normalize_locale(locale) == "zh":
-        return ZH_METRIC_LABELS.get(metric, metric.replace("_", " "))
-    return metric_label(metric)
-
-
-def localize_achievement(item: Dict[str, Any], locale: Optional[str]) -> Dict[str, Any]:
-    clean = dict(item)
-    if normalize_locale(locale) != "zh":
-        return clean
-
-    translation = ZH_ACHIEVEMENT_TRANSLATIONS.get(str(clean.get("id") or ""), {})
-    if translation.get("name"):
-        clean["name"] = translation["name"]
-    if translation.get("description"):
-        clean["description"] = translation["description"]
-
-    category = clean.get("category")
-    if isinstance(category, str):
-        clean["category"] = ZH_CATEGORY_TRANSLATIONS.get(category, category)
-
-    tier_label = localized_tier_label(clean.get("tier"), locale)
-    if tier_label:
-        clean["tier_label"] = tier_label
-
-    next_tier_label = localized_tier_label(clean.get("next_tier"), locale)
-    if next_tier_label:
-        clean["next_tier_label"] = next_tier_label
-
-    return clean
-
-
-def localize_achievement_collection(items: List[Dict[str, Any]], locale: Optional[str]) -> List[Dict[str, Any]]:
-    return [display_achievement(item, locale=locale) for item in items]
-
-
-def criteria_for(definition: Dict[str, Any], locale: Optional[str] = None) -> str:
-    is_zh = normalize_locale(locale) == "zh"
+def criteria_for(definition: Dict[str, Any]) -> str:
     if definition.get("secret") and definition.get("state") == "secret":
-        if is_zh:
-            return "秘密：在 Hermes 看到第一个匹配信号之前，精确要求会保持隐藏。继续在调试、工具、记忆、技能、插件和模型工作流里使用 Hermes 来揭示它。"
         return "Secret: exact requirement hidden until Hermes sees the first matching signal. Keep using Hermes across debugging, tools, memory, skills, plugins, and model workflows to reveal it."
     secret_prefix = ""
     if "threshold_metric" in definition:
         tiers_list = sorted(definition.get("tiers", []), key=lambda t: t["threshold"])
         if not tiers_list:
-            return secret_prefix + ("要求：在对应的工作流里使用 Hermes。" if is_zh else "Requirement: use Hermes in the matching workflow.")
-        metric = localized_metric_label(definition["threshold_metric"], locale)
-        ladder = ", ".join(f"{localized_tier_label(t['name'], locale)} {t['threshold']}" for t in tiers_list)
-        if is_zh:
-            return secret_prefix + f"要求：{metric}。等级阶梯：{ladder}。"
+            return secret_prefix + "Requirement: use Hermes in the matching workflow."
+        metric = metric_label(definition["threshold_metric"])
+        ladder = ", ".join(f"{t['name']} {t['threshold']}" for t in tiers_list)
         return secret_prefix + f"Requirement: {metric}. Tier ladder: {ladder}."
     requirements = definition.get("requirements") or []
     if requirements:
-        parts = [f"{localized_metric_label(r['metric'], locale)} ≥ {int(r.get('gte', 1))}" for r in requirements]
-        if is_zh:
-            return secret_prefix + "要求：" + "；".join(parts) + "。"
+        parts = [f"{metric_label(r['metric'])} ≥ {int(r.get('gte', 1))}" for r in requirements]
         return secret_prefix + "Requirement: " + "; ".join(parts) + "."
-    return secret_prefix + ("要求：完成对应的 Hermes 行为。" if is_zh else "Requirement: complete the matching Hermes behavior.")
+    return secret_prefix + "Requirement: complete the matching Hermes behavior."
 
 
-def display_achievement(item: Dict[str, Any], locale: Optional[str] = None) -> Dict[str, Any]:
-    clean = localize_achievement(item, locale)
+def display_achievement(item: Dict[str, Any]) -> Dict[str, Any]:
+    clean = dict(item)
     if clean.get("state") == "secret":
-        secret_description = "秘密成就：在 Hermes 从你的会话历史中检测到第一个相关行为之前保持隐藏。" if normalize_locale(locale) == "zh" else "Secret achievement: hidden until Hermes detects the first relevant behavior in your session history."
-        return {**clean, "name": "???", "description": secret_description, "criteria": criteria_for(item, locale=locale), "icon": "secret"}
-    clean["criteria"] = criteria_for(item, locale=locale)
+        return {**clean, "name": "???", "description": "Secret achievement: hidden until Hermes detects the first relevant behavior in your session history.", "criteria": criteria_for(clean), "icon": "secret"}
+    clean["criteria"] = criteria_for(clean)
     return clean
-
-
-def localized_snapshot(data: Dict[str, Any], locale: Optional[str]) -> Dict[str, Any]:
-    payload = dict(data)
-    payload["achievements"] = localize_achievement_collection(data.get("achievements") or [], locale)
-    return payload
 
 
 def scan_sessions(
@@ -1209,8 +1028,8 @@ def evaluate_all(force: bool = False) -> Dict[str, Any]:
 
 
 @router.get("/achievements")
-async def achievements(locale: Optional[str] = None):
-    data = localized_snapshot(evaluate_all(), locale)
+async def achievements():
+    data = evaluate_all()
     payload = {k: data[k] for k in ["achievements", "unlocked_count", "discovered_count", "secret_count", "total_count", "error", "generated_at"] if k in data}
     payload["is_stale"] = _is_snapshot_stale(data)
     payload["scan_meta"] = {
@@ -1226,13 +1045,13 @@ async def scan_status():
 
 
 @router.get("/recent-unlocks")
-async def recent_unlocks(locale: Optional[str] = None):
-    data = localized_snapshot(evaluate_all(), locale)
+async def recent_unlocks():
+    data = evaluate_all()
     return sorted([a for a in data["achievements"] if a["unlocked"]], key=lambda a: a.get("unlocked_at") or 0, reverse=True)[:20]
 
 
 @router.get("/sessions/{session_id}/badges")
-async def session_badges(session_id: str, locale: Optional[str] = None):
+async def session_badges(session_id: str):
     data = evaluate_all()
     session = next((s for s in data["sessions"] if s["session_id"] == session_id), None)
     if not session:
@@ -1242,7 +1061,7 @@ async def session_badges(session_id: str, locale: Optional[str] = None):
     for definition in ACHIEVEMENTS:
         result = evaluate_definition(definition, aggregate)
         if result["unlocked"]:
-            badges.append(display_achievement({**definition, **result}, locale=locale))
+            badges.append(display_achievement({**definition, **result}))
     return {"session_id": session_id, "badges": badges}
 
 

@@ -97,6 +97,16 @@ export const en: Translations = {
     currentProfileOption: "this dashboard ({name})",
     managingProfileBanner:
       "Managing profile \u201c{name}\u201d \u2014 config, keys, skills, MCPs, model, and new chats apply to that profile.",
+    memoryOomRestartBanner:
+      "Your agent restarted unexpectedly, most likely because it ran out of memory. Long sessions and many concurrent tasks increase memory use.",
+    memoryCriticalBanner:
+      "Your agent is almost out of memory and may restart. Consider closing idle sessions or upgrading its memory.",
+    memoryElevatedBanner: "Your agent is running low on memory.",
+    diskCriticalBanner:
+      "Your agent's disk is almost full. New messages, memories, and settings may fail to save.",
+    diskElevatedBanner:
+      "Your agent's disk is filling up. Consider clearing old sessions or expanding its storage.",
+    dismiss: "Dismiss",
   },
 
   status: {
@@ -144,8 +154,14 @@ export const en: Translations = {
     title: "Sessions",
     history: "History",
     overview: "Overview",
+    filterChats: "Chats",
+    filterAutomation: "Automation",
+    filterAll: "All",
+    sourceFilter: "Session source",
+    anySource: "Any source",
     searchPlaceholder: "Search message content...",
     noSessions: "No sessions yet",
+    noSessionsInFilter: "No sessions in this filter",
     noMatch: "No sessions match your search",
     startConversation: "Start a conversation to see it here",
     noMessages: "No messages",
@@ -313,27 +329,7 @@ export const en: Translations = {
     defaultBadge: "default",
     hasEnv: "env",
     model: "Model",
-    provider: "Provider",
     skills: "Skills",
-    configure: "Configure",
-    configureTitle: "Model, provider, and skills for this profile",
-    noModelSet: "No model selected",
-    changeModel: "Change model",
-    modelSaved: "Model updated",
-    skillsEnabled: "{enabled} of {total} skills enabled",
-    noSkillsInstalled: "No skills in this profile yet.",
-    skillsOnProfile: "On this profile",
-    skillsInLibrary: "Available from library",
-    addSkill: "Add",
-    removeSkill: "Remove",
-    skillAdded: "Skill added",
-    skillRemoved: "Skill removed from profile",
-    skillsLibrarySharedDefault:
-      "The default agent shares ~/.hermes/skills with the library — add-from-library only works on sub-profiles (e.g. game-artist).",
-    skillsLibraryAllAdded:
-      "Every skill in the default library is already on this agent.",
-    skillsLibraryUnavailable:
-      "Could not load addable skills. Restart hermes dashboard from the latest checkout and hard-refresh.",
     rename: "Rename",
     editSoul: "Edit SOUL.md",
     soulSection: "SOUL.md (personality / system prompt)",
@@ -485,23 +481,6 @@ export const en: Translations = {
       logging: "Logging",
       discord: "Discord",
       auxiliary: "Auxiliary",
-      bedrock: "Bedrock",
-      curator: "Curator",
-      gateway: "Gateway",
-      kanban: "Kanban",
-      lsp: "LSP",
-      matrix: "Matrix",
-      mattermost: "Mattermost",
-      model_catalog: "Model Catalog",
-      openrouter: "OpenRouter",
-      secrets: "Secrets",
-      sessions: "Sessions",
-      slack: "Slack",
-      tool_loop_guardrails: "Tool Loop Guardrails",
-      tool_output: "Tool Output",
-      updates: "Updates",
-      web: "Web",
-      x_search: "X Search",
     },
   },
 
@@ -848,6 +827,12 @@ export const en: Translations = {
       "Mark this task as blocked? The worker's claim is released.",
     confirmScheduled:
       "Move this task to Scheduled? Use this for known time delays rather than human blockers.",
+    confirmDoneMany:
+      "Mark {n} tasks as done? The workers' claims are released and dependent children become ready.",
+    confirmArchiveMany:
+      "Archive {n} tasks? They disappear from the default board view.",
+    confirmBlockedMany:
+      "Mark {n} tasks as blocked? The workers' claims are released.",
     completionSummary:
       "Completion summary for {label}. This is stored as the task result.",
     completionSummaryRequired:
@@ -865,164 +850,6 @@ export const en: Translations = {
       "workspace path (optional, derived from assignee if blank)",
     logTruncated: "(showing last 100 KB — full log at ",
     logAt: ")",
-    clearFilters: "Clear filters",
-    delete: "Delete",
-    setPriority: "Set priority",
-    create: "Create",
-    copyCommandPrompt: "Copy this command:",
-    dismissUntilReload: "Hide until next page reload",
-    docsLink: {
-      title: "Open Hermes Kanban docs in a new tab",
-      aria: "Hermes Kanban documentation",
-    },
-    orchestration: {
-      loadFailed: "Failed to load: ",
-      settingsSaved: "Settings saved.",
-      saveFailed: "Save failed: ",
-      header: "Orchestration settings",
-      loadingMode: "Loading mode…",
-      modeAutoTitle:
-        "Orchestration: Auto — the dispatcher decomposes new triage tasks automatically every tick. Click to switch to Manual (pre-PR behavior).",
-      modeManualTitle:
-        "Orchestration: Manual — triage tasks stay in triage until you click ⚗ Decompose on each card. Click to switch to Auto.",
-      label: "Orchestration:",
-      auto: "Auto",
-      manual: "Manual",
-      configureTitle:
-        "Configure the kanban orchestrator (profile picker, default assignee, auto-decompose, profile descriptions)",
-      orchestratorProfile: "Orchestrator profile",
-      defaultAssignee: "Default assignee",
-      defaultValue: "(default: {name})",
-      resolved: "Resolved: {name}",
-      mode: "Orchestration mode",
-      autoDecomposeLabel: "Auto-decompose triage tasks",
-      autoHint: "The dispatcher decomposes new triage tasks automatically.",
-      manualHint: "Triage tasks stay in triage until you click ⚗ Decompose.",
-      profileDescriptions: "Profile descriptions",
-      profileDescriptionsHelp:
-        "Descriptions guide the orchestrator's routing. Click ⚗ to auto-generate, or edit and save.",
-      noProfilesInstalled: "No profiles installed.",
-      defaultTag: "(default)",
-      autoReviewTag: "auto — review",
-      noDescriptionWarning: "⚠ no description",
-      descriptionPlaceholder: "What is this profile good at?",
-      saveTitle: "Save the description above as user-authored",
-      saveBusy: "Saving…",
-      descriptionSaved: "Description saved for {name}.",
-      generateTitle:
-        "Auto-generate a description from this profile's skills and model",
-      generateBusy: "Generating…",
-      autoGenerateLabel: "⚗ Auto",
-      descriptionGenerated: "Auto-generated description for {name}.",
-      generateFailed: "Auto-generate failed: ",
-    },
-    boardSwitcher: {
-      switchAria: "Switch kanban board",
-      selectTitle:
-        "Boards are independent work streams. Each board has its own tasks, tenants, and assignees.",
-      taskCount: "{n} task(s)",
-      newBoardHelp:
-        "Create a new board. Useful when you want an unrelated work stream (different project, different team, isolated scratch area).",
-    },
-    validation: {
-      slugRequired: "Slug is required",
-    },
-    boardForm: {
-      descriptionPlaceholder: "What goes on this board?",
-    },
-    toolbar: {
-      searchHint:
-        "Fuzzy-match tasks by id, title, or description. Matches across all columns.",
-      tenantHint:
-        "Tenants are free-form tags on a task (e.g. customer, project, team). Set them via the task drawer or kanban_create.",
-      assigneeHint:
-        "Filter by assigned Hermes profile. Profiles are the named agent identities that claim and work on tasks.",
-      showArchivedHint:
-        "Include archived tasks in the board view. Archived tasks are hidden by default.",
-      lanesByProfileHint: "Group the Running column by assigned profile",
-      nudgeDispatcherHint:
-        "Wake the dispatcher to claim ready tasks now instead of waiting for the next tick. Use this after adding tasks if you want them picked up immediately.",
-      refreshHint:
-        "Reload the board from the database. The board auto-refreshes on task events; this is for forcing a re-read.",
-      clearFiltersHint:
-        "Clear all active filters (search, tenant, assignee, archived).",
-    },
-    bulk: {
-      moveTodoTitle: "Move selected tasks to Todo.",
-      moveReadyTitle:
-        "Move selected tasks to Ready. Ready tasks are picked up by the dispatcher on the next tick.",
-      blockConfirm: "Block {n} task(s)?",
-      blockTitle: "Block selected tasks. Releases any active claims.",
-      unblockConfirm: "Unblock {n} task(s)?",
-      unblockTitle: "Unblock selected tasks (promote to Ready).",
-      completeTitle:
-        "Mark selected tasks as done. Releases any claims and unblocks dependent children. You'll be asked for a completion summary.",
-      archiveTitle:
-        "Archive selected tasks. They disappear from the default board view but remain in the database.",
-      deleteTitle: "Permanently delete selected tasks. This cannot be undone.",
-      setPriorityTitle:
-        "Set priority on selected tasks. Higher = claimed first.",
-      reassignTitle:
-        "Reassign selected tasks to a different Hermes profile. Pick a profile (or unassign) and click Apply.",
-      reassignPlaceholder: "— reassign —",
-      unassignOption: "(unassign)",
-      applyTitle: "Apply the selected assignee to all selected tasks.",
-      reclaimFirstTitle: "Reclaim any active claims before reassigning",
-      reclaimFirstLabel: "Reclaim first",
-      selectAllVisibleTitle: "Select all visible cards across columns.",
-      selectAllVisible: "Select all visible",
-      clearSelectionTitle: "Deselect all tasks and hide this bar.",
-    },
-    columnUi: {
-      selectAllTitle: "Select all tasks in this column",
-      selectAllAria: "Select all tasks in {column}",
-      taskCount: "{n} task(s) in this column",
-    },
-    taskUi: {
-      aria: "{title} — {id} — {status}",
-      selectTaskAria: "Select task {id}",
-      taskIdTitle:
-        "Task id: {id}. Use this id with kanban_show, /kanban show, or hermes kanban show.",
-      activeDiagnosticsTitle:
-        "{n} active diagnostic(s) (severity: {severity}). Click to open for details.",
-      priorityTitle:
-        "Priority {priority}. Higher-priority tasks are claimed first by the dispatcher.",
-      tenantTitle:
-        "Tenant: {tenant}. Free-form tag for grouping tasks (customer, project, team).",
-      childProgressTitle: "{done} of {total} child tasks done",
-      assignedProfileTitle: "Assigned to Hermes profile @{assignee}",
-      noProfileAssigned: "No profile assigned.",
-      commentCountTitle: "{n} comment(s) on this task",
-      linkCountTitle:
-        "{parents} parent(s), {children} child(ren). Children stay blocked until their parent is done.",
-      createdAtTitle: "Created {createdAt}",
-    },
-    inlineCreateUi: {
-      specifierTitle:
-        "Hermes profile that will spec this task (default: the dispatcher's configured specifier). Leave blank to let the dispatcher pick.",
-      assigneeTitle:
-        "Hermes profile to assign. Leave blank and the dispatcher will pick from available profiles when the task is Ready.",
-      priorityTitle:
-        "Priority. Higher-priority tasks are claimed first by the dispatcher. 0 = default.",
-      skillsTitle:
-        "Force-load these skills into the worker (in addition to the built-in kanban-worker).",
-      workspaceKindTitle:
-        "scratch: isolated temp dir (default). worktree: git worktree on the assignee profile. dir: exact path (required below).",
-      parentTitle:
-        "Optional parent task. A child stays blocked in its current column until the parent is marked done.",
-    },
-    workerLogUi: {
-      refreshTitle: "Refresh log",
-    },
-    bodyEditorUi: {
-      editTitle: "Edit description",
-    },
-    trash: {
-      confirm: "Permanently delete this task? This cannot be undone.",
-      confirmMany: "Permanently delete {n} selected tasks? This cannot be undone.",
-      dropHint: "Drop to delete",
-    },
-  },
     newTaskTitle: "New task — {column}",
     taskTitleLabel: "Title",
     assigneeLabel: "Assignee",
@@ -1031,6 +858,7 @@ export const en: Translations = {
     skillsLabelHint: "(optional, comma-separated)",
     parentLabel: "Parent task",
     parentLabelHint: "(child stays blocked until the parent is done)",
+    create: "Create",
     boardSettings: "Settings",
     boardSettingsTitle:
       "Board settings — name, description, and the default project directory new tasks inherit",
@@ -1042,5 +870,9 @@ export const en: Translations = {
       "Comments reach the worker on its next run or kanban_show() — no need to block the task first.",
     commentHintTitle:
       "Comments are the channel for talking to a task's worker. They land on the thread immediately — no need to block the task first. A running worker picks the thread up on its next kanban_show() or respawn; blocking is only for when you want the worker to STOP and wait for your input.",
-
+    trash: {
+      confirmTitle: "Delete task?",
+      confirmManyTitle: "Delete {n} tasks?",
+    },
+  },
 };

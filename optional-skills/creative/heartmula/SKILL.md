@@ -2,6 +2,8 @@
 name: heartmula
 description: "HeartMuLa：从歌词 + 标签生成类似 Suno 的歌曲"
 version: 1.0.0
+author: Teknium (teknium1), Hermes Agent
+license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
