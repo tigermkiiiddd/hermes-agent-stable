@@ -1,0 +1,8 @@
+{
+  "package": "@assistant-ui/core",
+  "version": "0.2.23",
+  "file": "dist/subscribable/subscribable.js",
+  "reason": "LazyMemoizeSubject.getState() rebuilds a fresh-but-shallow-equal state object after every core notify. The tap useSyncExternalStore Object.is snapshot check then never passes, its forceUpdate (a c => c+1 reducer, always a new state) re-renders, and the loop runs to 'Maximum update depth exceeded' — the desktop chat-pane crash of 2026-08-24 (verified live: 'changed fields: none, fresh identity only'). Keeping the previous identity when a rebuild is shallow-equal is the same guard ShallowMemoizeSubject in the same file already uses. Upstream report pending; re-derive against upstream once fixed.",
+  "find": "\t\t\tif (newState !== SKIP_UPDATE) this._previousState = newState;",
+  "replace": "\t\t\t// HERMES PATCH (chat crash 2026-08-24): keep the previous state's identity when a dirty\n\t\t\t// rebuild is shallow-equal — a fresh-but-identical object makes the tap\n\t\t\t// useSyncExternalStore Object.is snapshot check fail forever and loop to\n\t\t\t// \"Maximum update depth exceeded\". Same guard ShallowMemoizeSubject uses.\n\t\t\tif (newState !== SKIP_UPDATE && !shallowEqual(newState, this._previousState)) this._previousState = newState;"
+}

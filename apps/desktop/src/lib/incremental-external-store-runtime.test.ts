@@ -1,13 +1,18 @@
 import { fromThreadMessageLike, getAutoStatus, MessageRepository } from '@assistant-ui/core/internal'
 import type { ExportedMessageRepository, ThreadMessage } from '@assistant-ui/react'
+import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { syncRepositoryIncrementally } from './incremental-external-store-runtime'
+import { syncRepositoryIncrementally, useIncrementalExternalStoreRuntime } from './incremental-external-store-runtime'
 
 const STATUS = getAutoStatus(false, false, false, false, undefined)
 
 function message(id: string, text: string): ThreadMessage {
   return fromThreadMessageLike({ role: 'assistant', content: [{ type: 'text', text }] }, id, STATUS)
+}
+
+function userMessage(id: string, text: string): ThreadMessage {
+  return fromThreadMessageLike({ role: 'user', content: [{ type: 'text', text }] }, id, STATUS)
 }
 
 /** A real MessageRepository behind the same shape syncRepositoryIncrementally drives. */
@@ -140,5 +145,146 @@ describe('syncRepositoryIncrementally', () => {
     })
 
     expect(result.map(item => item.id)).toEqual(['a'])
+  })
+})
+
+describe('useIncrementalExternalStoreRuntime adapter resets', () => {
+  it('keeps the messages snapshot identity across a no-op adapter swap', () => {
+    const items = chain([message('a', 'one'), message('b', 'two')])
+
+    const { result, rerender } = renderHook(
+      ({ repository }) =>
+        useIncrementalExternalStoreRuntime({ messageRepository: repository, isRunning: false, onNew: async () => {} }),
+      { initialProps: { repository: exported(items) } }
+    )
+
+    const runtime = result.current
+    const before = runtime.threads.main.getState().messages
+
+    expect(before.map(item => item.id)).toEqual(['a', 'b'])
+
+    // An idle re-render of the chat surface: a brand-new store literal wrapping
+    // a brand-new repository container whose messages are the SAME objects.
+    // The snapshot must not move — a fresh array here re-renders the surface,
+    // which rebuilds the literal again and loops to "Maximum update depth
+    // exceeded" (#chat pane crash).
+    const rebuiltContainer = exported(items.map(({ message: msg, parentId }) => ({ message: msg, parentId })))
+
+    rerender({ repository: rebuiltContainer })
+
+    expect(runtime.threads.main.getState().messages).toBe(before)
+  })
+
+  it('lands a quiet append that arrives without a run-state change', () => {
+    const a = message('a', 'one')
+    const b = message('b', 'two')
+    const c = message('c', 'three')
+
+    const { result, rerender } = renderHook(
+      ({ repository }) =>
+        useIncrementalExternalStoreRuntime({ messageRepository: repository, isRunning: false, onNew: async () => {} }),
+      { initialProps: { repository: exported(chain([a, b])) } }
+    )
+
+    // e.g. a backfilled older page or a background delegation result: the
+    // transcript grows while isRunning and the adapter observers stand still.
+    rerender({ repository: exported(chain([a, b, c])) })
+
+    expect(result.current.threads.main.getState().messages.map(item => item.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('renders a streamed tail delta and preserves settled message identity', () => {
+    const a = message('a', 'one')
+    const b1 = message('b', 'two')
+
+    const { result, rerender } = renderHook(
+      ({ repository }) =>
+        useIncrementalExternalStoreRuntime({ messageRepository: repository, isRunning: false, onNew: async () => {} }),
+      { initialProps: { repository: exported(chain([a, b1])) } }
+    )
+
+    const b2 = message('b', 'two and a half')
+
+    rerender({ repository: exported(chain([a, b2])) })
+
+    const messages = result.current.threads.main.getState().messages
+
+    expect(messages[0]).toBe(a)
+
+    const tail = messages.at(-1)?.content[0]
+
+    expect(tail).toMatchObject({ type: 'text', text: 'two and a half' })
+  })
+
+  it('does not churn when the transcript ends with hidden (rewound) messages', () => {
+    const question = userMessage('u-1', 'question')
+    const rewoundAnswer = message('a-1', 'rewound answer')
+
+    // rewind.ts marks a rewound assistant answer hidden: true but keeps it in
+    // the transcript; useRuntimeMessageRepository anchors it under the last
+    // VISIBLE message and reports headId = that visible message.
+    const incoming = () => ({
+      headId: 'u-1' as const,
+      messages: [
+        { message: question, parentId: null },
+        { message: rewoundAnswer, parentId: 'u-1' }
+      ] as { message: ThreadMessage; parentId: string | null }[]
+    })
+
+    const { result, rerender } = renderHook(
+      ({ repository }) =>
+        useIncrementalExternalStoreRuntime({ messageRepository: repository, isRunning: false, onNew: async () => {} }),
+      { initialProps: { repository: incoming() } }
+    )
+
+    const runtime = result.current
+    const before = runtime.threads.main.getState().messages
+
+    expect(before.map(item => item.id)).toEqual(['u-1'])
+
+    // Idle re-render: fresh container, same content. resetHead('u-1') evicts
+    // the hidden child every sync, so reconcile goes 'stale' and the snapshot
+    // must NOT move — a fresh array here re-renders the chat surface, rebuilds
+    // the literal, and loops to "Maximum update depth exceeded".
+    rerender({ repository: incoming() })
+
+    expect(runtime.threads.main.getState().messages).toBe(before)
+  })
+
+  it('survives a cancel that deleted the optimistic placeholder before the adapter reset', () => {
+    const a = message('a', 'answer')
+    const question = userMessage('u-1', 'question')
+    const repository = exported(chain([a, question]))
+
+    const { result, rerender } = renderHook(
+      ({ isRunning }) =>
+        useIncrementalExternalStoreRuntime({
+          messageRepository: repository,
+          isRunning,
+          onNew: async () => {},
+          onCancel: async () => {}
+        }),
+      { initialProps: { isRunning: true } }
+    )
+
+    const runtime = result.current
+
+    // Mid-run with a user tail: the runtime appends an optimistic assistant.
+    expect(runtime.threads.main.getState().messages.at(-1)).toMatchObject({ role: 'assistant' })
+
+    // cancelRun deletes the empty optimistic head synchronously — the stored
+    // placeholder id becomes a ghost that the next adapter reset must not try
+    // to delete ("Message not found" crash on the re-render after cancel).
+    vi.useFakeTimers()
+
+    act(() => {
+      runtime.threads.main.cancelRun()
+      vi.runAllTimers()
+    })
+
+    vi.useRealTimers()
+
+    expect(() => rerender({ isRunning: false })).not.toThrow()
+    expect(result.current.threads.main.getState().messages.map(item => item.id)).toEqual(['a', 'u-1'])
   })
 })

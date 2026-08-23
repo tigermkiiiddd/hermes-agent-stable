@@ -19,6 +19,7 @@ import { ErrorState } from '@/components/ui/error-state'
 import { TitleMenuTrigger } from '@/components/ui/title-menu-trigger'
 import { type HermesGateway } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { chatLoopDiag } from '@/lib/chat-loop-diagnostics'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { NEW_SESSION_TITLE, quickModelOptions, sessionTitle } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
@@ -208,7 +209,13 @@ function useMessagesWhileVisible($messages: ReadableAtom<ChatMessage[]>): ChatMe
   // nanostores types the listener value ReadonlyIfObject; the store publishes
   // a fresh array per flush, so the cast is safe and avoids a per-token clone.
   useEffect(
-    () => (visible ? $messages.subscribe(value => setMessages(value as ChatMessage[])) : undefined),
+    () =>
+      visible
+        ? $messages.subscribe(value => {
+            chatLoopDiag.messagesEmit(value as readonly unknown[])
+            setMessages(value as ChatMessage[])
+          })
+        : undefined,
     [$messages, visible]
   )
 

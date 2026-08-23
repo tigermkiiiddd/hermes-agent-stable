@@ -15,6 +15,8 @@ import {
 } from '@assistant-ui/react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { chatLoopDiag } from './chat-loop-diagnostics'
+
 const EMPTY_ARRAY = Object.freeze([])
 
 const shallowEqual = (a: object, b: object): boolean => {
@@ -35,6 +37,24 @@ const shallowEqual = (a: object, b: object): boolean => {
 
 const getThreadListAdapter = (store: ExternalStoreAdapter) => store.adapters?.threadList ?? {}
 
+/** Item-for-item (message object, parentId) equality of two repository inputs. */
+function sameRepositoryItems(
+  a: readonly { message: ThreadMessage; parentId: string | null }[],
+  b: readonly { message: ThreadMessage; parentId: string | null }[]
+): boolean {
+  if (a.length !== b.length) {
+    return false
+  }
+
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].message !== b[i].message || a[i].parentId !== b[i].parentId) {
+      return false
+    }
+  }
+
+  return true
+}
+
 /**
  * Write only the items whose (message, parentId) pair actually moved.
  *
@@ -44,36 +64,40 @@ const getThreadListAdapter = (store: ExternalStoreAdapter) => store.adapters?.th
  * one item — the growing tail — differs, and the other N-1 writes were pure
  * overhead that grew with transcript length.
  *
- * Returns false when the export is stale (an id in `existing` is gone, or an
- * incoming message has no repository entry yet), so the caller falls back to
- * the full rebuild rather than guessing.
+ * Returns 'stale' when the transcript can't be reconciled in place (the
+ * message sets differ in size, or an incoming message has no repository
+ * entry yet), so the caller falls back to the full rebuild rather than
+ * guessing; 'incremental' when writes were applied; 'unchanged' when the
+ * repository already held exactly this transcript.
  */
 function applyChangedMessages(
   repository: ExternalStoreThreadRuntimeCore['repository'],
   existing: readonly { message: ThreadMessage; parentId: string | null }[],
   incoming: readonly { message: ThreadMessage; parentId: string | null }[]
-): boolean {
+): 'unchanged' | 'incremental' | 'stale' {
   if (existing.length !== incoming.length) {
-    return false
+    return 'stale'
   }
 
   const existingById = new Map(existing.map(item => [item.message.id, item]))
+  let wrote = false
 
   for (const item of incoming) {
     const current = existingById.get(item.message.id)
 
     if (!current) {
-      return false
+      return 'stale'
     }
 
     // Reference identity, not deep equality: the conversion cache guarantees a
     // stable object for an unchanged turn, and a changed turn is a new object.
     if (current.message !== item.message || current.parentId !== item.parentId) {
       repository.addOrUpdateMessage(item.parentId, item.message)
+      wrote = true
     }
   }
 
-  return true
+  return wrote ? 'incremental' : 'unchanged'
 }
 
 export function syncRepositoryIncrementally(
@@ -95,7 +119,7 @@ export function syncRepositoryIncrementally(
   // Steady-state streaming: same message set, one item changed. Skip the
   // whole-transcript rewrite, the prune scan, and the second export. resetHead
   // deletes the head's descendants, so it only runs when the head really moved.
-  if (!disjoint && applyChangedMessages(repository, existing, incoming)) {
+  if (!disjoint && applyChangedMessages(repository, existing, incoming) !== 'stale') {
     if (repository.headId !== headId) {
       repository.resetHead(headId)
     }
@@ -135,6 +159,10 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
     const self = this as unknown as {
       _assistantOptimisticId: null | string
       _capabilities: object
+      _lastSyncedInput?: {
+        headId: string | null
+        messages: readonly { message: ThreadMessage; parentId: string | null }[]
+      }
       _messages: readonly ThreadMessage[]
       _notifyEventSubscribers: (event: string, payload: object) => void
       _notifySubscribers: () => void
@@ -145,20 +173,29 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
       return
     }
 
+    chatLoopDiag.setAdapter()
+
     const isRunning = store.isRunning ?? false
     this.isDisabled = store.isDisabled ?? false
 
     const oldStore = self._store
     self._store = store
 
+    const prevRunning = oldStore?.isRunning ?? false
+
+    // Whether any of the shallow-equal guards below actually mutate state.
+    let adapterObserversChanged = false
+
     if (this.extras !== store.extras) {
       this.extras = store.extras
+      adapterObserversChanged = true
     }
 
     const newSuggestions = store.suggestions ?? EMPTY_ARRAY
 
     if (!shallowEqual(this.suggestions, newSuggestions)) {
       this.suggestions = newSuggestions
+      adapterObserversChanged = true
     }
 
     const newCapabilities = {
@@ -178,18 +215,69 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
 
     if (!shallowEqual(self._capabilities, newCapabilities)) {
       self._capabilities = newCapabilities
+      adapterObserversChanged = true
     }
 
-    if (oldStore && oldStore.isRunning === store.isRunning && oldStore.messageRepository === store.messageRepository) {
-      self._notifySubscribers()
+    const incoming = store.messageRepository.messages
+    const incomingHeadId = store.messageRepository.headId ?? incoming.at(-1)?.message.id ?? null
+    const runningChanged = prevRunning !== isRunning
+
+    // A true no-op: same transcript INPUT, same head, same run state, same
+    // adapter observers. The comparison base is the last sync's INPUT, never
+    // the repository's export — headId anchors at the last visible message,
+    // so resetHead evicts the hidden (rewound) tail on every sync, and an
+    // export diff then reports 'stale' forever. That kept this guard from
+    // ever firing: the tail reset the head (dirtying the repository's cached
+    // array), notified, handed useSyncExternalStore a fresh snapshot,
+    // re-rendered the chat surface, rebuilt the store literal, and re-entered
+    // setAdapter — a loop that only ended when React threw "Maximum update
+    // depth exceeded".
+    if (
+      self._lastSyncedInput &&
+      self._lastSyncedInput.headId === incomingHeadId &&
+      !runningChanged &&
+      !adapterObserversChanged &&
+      sameRepositoryItems(self._lastSyncedInput.messages, incoming)
+    ) {
+      chatLoopDiag.guardHit()
 
       return
     }
 
-    if (self._assistantOptimisticId) {
-      this.repository.deleteMessage(self._assistantOptimisticId)
-      self._assistantOptimisticId = null
+    if (!self._lastSyncedInput) {
+      chatLoopDiag.guardMiss('noCache')
+    } else {
+      if (self._lastSyncedInput.headId !== incomingHeadId) {
+        chatLoopDiag.guardMiss('head')
+      }
+
+      if (!sameRepositoryItems(self._lastSyncedInput.messages, incoming)) {
+        chatLoopDiag.guardMiss('items')
+      }
+
+      if (runningChanged) {
+        chatLoopDiag.guardMiss('running')
+      }
+
+      if (adapterObserversChanged) {
+        chatLoopDiag.guardMiss('observers')
+      }
     }
+
+    // The placeholder normally dies here — but core can evict it first
+    // (cancelRun deletes an empty optimistic head synchronously), and
+    // deleteMessage on the ghost id throws "Message not found", crashing the
+    // renderer on the very re-render that follows the cancel. Only delete
+    // what is still on the head chain: a live placeholder always is, an
+    // evicted one never is.
+    if (
+      self._assistantOptimisticId &&
+      this.repository.getMessages().some(message => message.id === self._assistantOptimisticId)
+    ) {
+      this.repository.deleteMessage(self._assistantOptimisticId)
+    }
+
+    self._assistantOptimisticId = null
 
     const messages = syncRepositoryIncrementally(this, store.messageRepository)
 
@@ -197,7 +285,7 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
       this.ensureInitialized()
     }
 
-    if ((oldStore?.isRunning ?? false) !== (store.isRunning ?? false)) {
+    if (runningChanged) {
       self._notifyEventSubscribers(store.isRunning ? 'runStart' : 'runEnd', {})
     }
 
@@ -214,8 +302,19 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
       self._assistantOptimisticId = optimisticId
     }
 
-    this.repository.resetHead(self._assistantOptimisticId ?? messages.at(-1)?.id ?? null)
+    // resetHead unconditionally dirties the repository's cached array, so only
+    // run it when the head actually needs to move — otherwise an observer-only
+    // pass would hand useSyncExternalStore a fresh snapshot for nothing.
+    const targetHeadId = self._assistantOptimisticId ?? messages.at(-1)?.id ?? null
+
+    if (this.repository.headId !== targetHeadId) {
+      this.repository.resetHead(targetHeadId)
+    }
+
     self._messages = this.repository.getMessages()
+    self._lastSyncedInput = { headId: incomingHeadId, messages: incoming }
+    chatLoopDiag.tailSync()
+    chatLoopDiag.notify()
     self._notifySubscribers()
   }
 }
@@ -248,6 +347,9 @@ export function useIncrementalExternalStoreRuntime<T extends ThreadMessage>(
   // when the store is unchanged, so gating on [runtime, store] is behavior-
   // preserving while skipping the per-render call entirely.
   useEffect(() => {
+    chatLoopDiag.render(
+      (store as { messageRepository?: { messages?: readonly unknown[] } }).messageRepository?.messages
+    )
     runtime.setAdapter(store as ExternalStoreAdapter)
   }, [runtime, store])
 
