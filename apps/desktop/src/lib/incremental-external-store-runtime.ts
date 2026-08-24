@@ -176,7 +176,9 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
     chatLoopDiag.setAdapter()
 
     const isRunning = store.isRunning ?? false
-    this.isDisabled = store.isDisabled ?? false
+    const newDisabled = store.isDisabled ?? false
+    const disabledChanged = this.isDisabled !== newDisabled
+    this.isDisabled = newDisabled
 
     const oldStore = self._store
     self._store = store
@@ -184,6 +186,12 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
     const prevRunning = oldStore?.isRunning ?? false
 
     // Whether any of the shallow-equal guards below actually mutate state.
+    // ChatRuntimeBoundary passes a fresh adapter literal on every render, so
+    // identity churn of the adapter object itself is NOT a change — notifying
+    // on it lets a subscriber whose notification re-renders the boundary drive
+    // an unbounded feedback loop (render -> new literal -> setAdapter -> notify
+    // -> render), which React kills with "Maximum update depth exceeded" and
+    // takes the session tile down with its error boundary.
     let adapterObserversChanged = false
 
     if (this.extras !== store.extras) {
@@ -223,17 +231,18 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
     const runningChanged = prevRunning !== isRunning
 
     // A true no-op: same transcript INPUT, same head, same run state, same
-    // adapter observers. The comparison base is the last sync's INPUT, never
-    // the repository's export — headId anchors at the last visible message,
-    // so resetHead evicts the hidden (rewound) tail on every sync, and an
-    // export diff then reports 'stale' forever. That kept this guard from
-    // ever firing: the tail reset the head (dirtying the repository's cached
-    // array), notified, handed useSyncExternalStore a fresh snapshot,
+    // disabled state, same adapter observers. The comparison base is the last
+    // sync's INPUT, never the repository's export — headId anchors at the last
+    // visible message, so resetHead evicts the hidden (rewound) tail on every
+    // sync, and an export diff then reports 'stale' forever. That kept this
+    // guard from ever firing: the tail reset the head (dirtying the repository's
+    // cached array), notified, handed useSyncExternalStore a fresh snapshot,
     // re-rendered the chat surface, rebuilt the store literal, and re-entered
     // setAdapter — a loop that only ended when React threw "Maximum update
     // depth exceeded".
     if (
       self._lastSyncedInput &&
+      !disabledChanged &&
       self._lastSyncedInput.headId === incomingHeadId &&
       !runningChanged &&
       !adapterObserversChanged &&
@@ -319,7 +328,7 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
   }
 }
 
-class IncrementalExternalStoreRuntimeCore extends BaseAssistantRuntimeCore {
+export class IncrementalExternalStoreRuntimeCore extends BaseAssistantRuntimeCore {
   threads: ExternalStoreThreadListRuntimeCore
 
   constructor(adapter: ExternalStoreAdapter) {
