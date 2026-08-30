@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from hermes_cli import kanban_db as kb
-from hermes_cli import kanban_meeting as km
 from hermes_cli import kanban_swarm as ks
 
 
@@ -461,60 +460,6 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_swarm.add_argument("--idempotency-key", default=None, help="Dedup key for the root card")
     p_swarm.add_argument("--json", action="store_true", help="Emit JSON output")
 
-    # --- meeting ---
-    p_meeting = sub.add_parser(
-        "meeting",
-        help="Async Kanban meeting (deliberation issue type)",
-    )
-    meeting_sub = p_meeting.add_subparsers(dest="meeting_cmd", required=True)
-
-    p_m_create = meeting_sub.add_parser("create", help="Create a meeting")
-    p_m_create.add_argument("title", help="Meeting title")
-    p_m_create.add_argument("agenda", help="Agenda / question")
-    p_m_create.add_argument("--moderator", default=None, help="Host profile")
-    p_m_create.add_argument(
-        "--participant", action="append", default=[], metavar="PROFILE",
-        help="Invited speaker (repeatable)",
-    )
-    p_m_create.add_argument(
-        "--observer", action="append", default=[], metavar="PROFILE",
-        help="Observer (repeatable)",
-    )
-    p_m_create.add_argument("--tenant", default=None)
-    p_m_create.add_argument("--idempotency-key", default=None)
-    p_m_create.add_argument("--json", action="store_true")
-
-    p_m_join = meeting_sub.add_parser("join", help="Join meeting roster")
-    p_m_join.add_argument("meeting_id")
-    p_m_join.add_argument("--profile", default=None)
-    p_m_join.add_argument("--json", action="store_true")
-
-    p_m_speak = meeting_sub.add_parser("speak", help="Post an utterance")
-    p_m_speak.add_argument("meeting_id")
-    p_m_speak.add_argument("body", help="Utterance text")
-    p_m_speak.add_argument(
-        "--kind", default="note",
-        choices=sorted(km.VALID_UTTERANCE_KINDS),
-    )
-    p_m_speak.add_argument("--round", type=int, default=0)
-    p_m_speak.add_argument("--profile", default=None)
-    p_m_speak.add_argument("--json", action="store_true")
-
-    p_m_show = meeting_sub.add_parser("show", help="Show transcript")
-    p_m_show.add_argument("meeting_id")
-    p_m_show.add_argument("--json", action="store_true", help="Structured JSON")
-
-    p_m_advance = meeting_sub.add_parser("advance", help="Moderator: next phase")
-    p_m_advance.add_argument("meeting_id")
-    p_m_advance.add_argument(
-        "step", choices=list(km.MEETING_STEPS),
-    )
-    p_m_advance.add_argument("--json", action="store_true")
-
-    p_m_close = meeting_sub.add_parser("close", help="Moderator: close with decision")
-    p_m_close.add_argument("meeting_id")
-    p_m_close.add_argument("decision", help="Final decision text")
-    p_m_close.add_argument("--json", action="store_true")
     # --- list ---
     p_list = sub.add_parser("list", aliases=["ls"], help="List tasks")
     p_list.add_argument("--mine", action="store_true",
@@ -1202,7 +1147,6 @@ def kanban_command(args: argparse.Namespace) -> int:
             "init":     _cmd_init,
             "create":   _cmd_create,
             "swarm":    _cmd_swarm,
-            "meeting":  _cmd_meeting,
             "list":     _cmd_list,
             "ls":       _cmd_list,
             "show":     _cmd_show,
@@ -2049,21 +1993,6 @@ def _cmd_set_model(args: argparse.Namespace) -> int:
     return 0
 
 
-
-
-def _cmd_meeting(args: argparse.Namespace) -> int:
-    sub = getattr(args, "meeting_cmd", None)
-    if not sub:
-        print("kanban meeting: subcommand required (create/join/speak/show/advance/close)", file=sys.stderr)
-        return 2
-    try:
-        return km.dispatch(args)
-    except ValueError as exc:
-        print(f"kanban meeting: {exc}", file=sys.stderr)
-        return 1
-    except RuntimeError as exc:
-        print(f"kanban meeting: {exc}", file=sys.stderr)
-        return 1
 def _cmd_reclaim(args: argparse.Namespace) -> int:
     with kb.connect_closing() as conn:
         ok = kb.reclaim_task(

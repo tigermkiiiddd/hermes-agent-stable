@@ -1134,7 +1134,6 @@ class Task:
     # set the env var. Lets clients render a per-session board without
     # relying on tenant + time-window heuristics.
     session_id: Optional[str] = None
-    issue_type: str = "work"
     # Typed block reason (one of VALID_BLOCK_KINDS) or None for legacy/un-typed
     # blocks. Set by ``block_task``; preserved across unblock so a re-block for
     # the same kind is recognisable as an unblock↔re-block loop.
@@ -1227,11 +1226,6 @@ class Task:
             ),
             session_id=(
                 row["session_id"] if "session_id" in keys else None
-            ),
-            issue_type=(
-                row["issue_type"]
-                if "issue_type" in keys and row["issue_type"]
-                else "work"
             ),
             block_kind=(
                 row["block_kind"] if "block_kind" in keys and row["block_kind"] else None
@@ -2835,8 +2829,6 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
                         (int(time.time()), cur.lastrowid),
                     )
 
-    _migrate_meeting_schema(conn)
-
     # One-shot event-kind rename pass. The old names ("ready", "priority",
     # "spawn_auto_blocked") still worked but were awkward on the wire;
     # rename them in-place so existing DBs migrate cleanly. Fires once
@@ -3027,48 +3019,6 @@ def _check_file_length_invariant(conn: sqlite3.Connection) -> None:
         )
 
 
-def _migrate_meeting_schema(conn: sqlite3.Connection) -> None:
-    """Add issue_type on tasks and meeting participant/utterance tables."""
-    cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
-    if "issue_type" not in cols:
-        _add_column_if_missing(
-            conn, "tasks", "issue_type", "issue_type TEXT NOT NULL DEFAULT 'work'"
-        )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_tasks_issue_type ON tasks(issue_type)"
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meeting_participants (
-            task_id    TEXT NOT NULL,
-            profile    TEXT NOT NULL,
-            role       TEXT NOT NULL,
-            status     TEXT NOT NULL DEFAULT 'invited',
-            joined_at  INTEGER,
-            PRIMARY KEY (task_id, profile)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meeting_utterances (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id    TEXT NOT NULL,
-            author     TEXT NOT NULL,
-            kind       TEXT NOT NULL,
-            body       TEXT NOT NULL,
-            round      INTEGER NOT NULL DEFAULT 0,
-            metadata   TEXT,
-            created_at INTEGER NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_meeting_utt_task "
-        "ON meeting_utterances(task_id, created_at)"
-    )
-
-
 # SQLite's own busy_timeout uses a near-deterministic backoff, so concurrent
 # writers re-collide in lockstep under a stampede. A jittered retry on the
 # transaction boundary breaks that convoy. Mirrors state.db's _execute_write:
@@ -3098,49 +3048,7 @@ def _execute_boundary_with_retry(conn: sqlite3.Connection, sql: str) -> None:
         except sqlite3.OperationalError as exc:
             if not _is_busy_error(exc) or attempt == _BUSY_MAX_RETRIES:
                 raise
-        time.sleep(random.uniform(_BUSY_RETRY_MIN_S, _BUSY_RETRY_MAX_S))
-
-
-def _migrate_meeting_schema(conn: sqlite3.Connection) -> None:
-    """Add issue_type on tasks and meeting participant/utterance tables."""
-    cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
-    if "issue_type" not in cols:
-        _add_column_if_missing(
-            conn, "tasks", "issue_type", "issue_type TEXT NOT NULL DEFAULT 'work'"
-        )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_tasks_issue_type ON tasks(issue_type)"
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meeting_participants (
-            task_id    TEXT NOT NULL,
-            profile    TEXT NOT NULL,
-            role       TEXT NOT NULL,
-            status     TEXT NOT NULL DEFAULT 'invited',
-            joined_at  INTEGER,
-            PRIMARY KEY (task_id, profile)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meeting_utterances (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id    TEXT NOT NULL,
-            author     TEXT NOT NULL,
-            kind       TEXT NOT NULL,
-            body       TEXT NOT NULL,
-            round      INTEGER NOT NULL DEFAULT 0,
-            metadata   TEXT,
-            created_at INTEGER NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_meeting_utt_task "
-        "ON meeting_utterances(task_id, created_at)"
-    )
+            time.sleep(random.uniform(_BUSY_RETRY_MIN_S, _BUSY_RETRY_MAX_S))
 
 
 @contextlib.contextmanager

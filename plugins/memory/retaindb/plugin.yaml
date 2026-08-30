@@ -1,6 +1,6 @@
 name: retaindb
 version: 1.0.0
-description: "RetainDB — 商业记忆服务，高级语义检索"
+description: "RetainDB — cloud memory API with hybrid search and 7 memory types."
 pip_dependencies:
   - requests
 requires_env:

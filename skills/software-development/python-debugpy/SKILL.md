@@ -1,6 +1,6 @@
 ---
 name: python-debugpy
-description: "调试 Python：pdb REPL + debugpy 远程（DAP）"
+description: "Debug Python: pdb REPL + debugpy remote (DAP)."
 version: 1.0.0
 author: Hermes Agent
 license: MIT

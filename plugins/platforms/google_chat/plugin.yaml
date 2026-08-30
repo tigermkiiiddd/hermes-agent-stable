@@ -2,7 +2,12 @@ name: google_chat-platform
 label: Google Chat
 kind: platform
 version: 1.0.0
-description: "Google Chat 平台适配器 — 工作区消息"
+description: >
+  Google Chat gateway adapter for Hermes Agent.
+  Connects through authenticated HTTP callbacks or an optional Cloud Pub/Sub
+  pull subscription for inbound events, and uses the Google Chat REST API for
+  outbound messages. Native file attachments are delivered via per-user OAuth
+  (each user runs /setup-files once in their own DM).
 author: Ramón Fernández
 # ``requires_env`` entries are surfaced in ``hermes config`` UI via the
 # platform-plugin env var injector in ``hermes_cli/config.py``.  Using the

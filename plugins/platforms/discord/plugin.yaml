@@ -2,7 +2,7 @@ name: discord-platform
 label: Discord
 kind: platform
 version: 1.0.0
-description: "Discord 平台适配器 — 机器人、斜杠命令、消息处理"
+description: >
   Discord gateway adapter for Hermes Agent.
   Connects to Discord via the discord.py library and relays messages
   between Discord guilds/DMs and the Hermes agent. Supports voice mode,

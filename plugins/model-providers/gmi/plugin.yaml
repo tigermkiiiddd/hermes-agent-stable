@@ -1,5 +1,5 @@
 name: gmi-provider
 kind: model-provider
 version: 1.0.0
-description: "GMI — 自定义模型提供商接口"
+description: GMI Cloud
 author: Nous Research

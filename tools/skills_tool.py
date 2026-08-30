@@ -834,7 +834,7 @@ def skills_list(category: str = None, task_id: str = None) -> str:
         if not active_skills_dir.exists():
             active_skills_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find all skills (filesystem + plugin-registered)
+        # Find all skills
         all_skills = _find_all_skills()
         try:
             from hermes_cli.plugins import discover_plugins, get_plugin_manager
@@ -849,40 +849,6 @@ def skills_list(category: str = None, task_id: str = None) -> str:
                 all_skills.append(plugin_skill)
         except Exception:
             logger.debug("Plugin skill listing failed", exc_info=True)
-
-        # Append plugin-registered skills
-        try:
-            from hermes_cli.plugins import get_plugin_manager
-
-            pm = get_plugin_manager()
-            for qualified_name, entry in getattr(pm, "_plugin_skills", {}).items():
-                if any(s.get("name") == qualified_name for s in all_skills):
-                    continue
-                skill_path = entry.get("path")
-                if not skill_path or not skill_path.exists():
-                    continue
-                try:
-                    content = skill_path.read_text(encoding="utf-8")[:4000]
-                    frontmatter, _body = _parse_frontmatter(content)
-                    description = frontmatter.get("description", entry.get("description", ""))
-                    if not description:
-                        for line in _body.strip().split("\n"):
-                            line = line.strip()
-                            if line and not line.startswith("#"):
-                                description = line
-                                break
-                    if len(description) > MAX_DESCRIPTION_LENGTH:
-                        description = description[:MAX_DESCRIPTION_LENGTH - 3] + "..."
-                    category = frontmatter.get("category", "plugin")
-                    all_skills.append({
-                        "name": qualified_name,
-                        "description": description,
-                        "category": category,
-                    })
-                except Exception:
-                    continue
-        except Exception:
-            pass
 
         if not all_skills:
             return json.dumps(
@@ -1576,7 +1542,11 @@ def skill_view(
                     },
                     ensure_ascii=False,
                 )
-            if not target_file.exists():
+            # Gate on is_file(), not exists(): a directory (e.g. requesting
+            # 'references' bare) must take the not-found listing branch, not
+            # fall through to read_text() and surface a raw [Errno 21]
+            # "Is a directory" OS error. Matches the plugin-skill branch above.
+            if not target_file.is_file():
                 # List available files in the skill directory, organized by type
                 available_files = {
                     "references": [],

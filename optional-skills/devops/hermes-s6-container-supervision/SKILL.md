@@ -1,6 +1,6 @@
 ---
 name: hermes-s6-container-supervision
-description: "修改、调试或扩展 s6-overlay 监督树"
+description: Modify or debug s6 services in the Hermes Docker image.
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -9,7 +9,7 @@ environments: [s6]
 metadata:
   hermes:
     tags: [docker, s6, supervision, gateway, profiles]
-    related_skills: [hermes-agent, hermes-agent-dev]
+    related_skills: [hermes-agent]
 ---
 
 # Hermes s6-overlay Container Supervision

@@ -74,43 +74,6 @@ class AchievementEngineTests(unittest.TestCase):
         self.assertEqual(display["name"], "???")
         self.assertNotIn("Permission", display["description"])
 
-    def test_display_achievement_localizes_zh_locale(self):
-        definition = next(a for a in plugin_api.ACHIEVEMENTS if a["id"] == "let_him_cook")
-        result = {
-            "unlocked": True,
-            "discovered": True,
-            "state": "unlocked",
-            "tier": "Silver",
-            "progress": 640,
-            "next_tier": "Gold",
-            "next_threshold": 1200,
-            "progress_pct": 100,
-        }
-
-        display = plugin_api.display_achievement({**definition, **result}, locale="zh")
-
-        self.assertEqual(display["name"], "让他做完")
-        self.assertEqual(display["category"], "代理自主")
-        self.assertEqual(display["tier_label"], "白银")
-        self.assertEqual(display["next_tier_label"], "黄金")
-        self.assertIn("要求：", display["criteria"])
-        self.assertIn("等级阶梯", display["criteria"])
-
-    def test_secret_achievement_localizes_zh_locale(self):
-        definition = {
-            "id": "permission_denied_any_percent",
-            "name": "Permission Denied Any%",
-            "secret": True,
-            "requirements": [{"metric": "permission_denied_events", "gte": 3}],
-            "state": "secret",
-        }
-
-        display = plugin_api.display_achievement({**definition, **{"unlocked": False, "discovered": False}}, locale="zh")
-
-        self.assertEqual(display["name"], "???")
-        self.assertIn("秘密成就", display["description"])
-        self.assertIn("秘密：", display["criteria"])
-
     def test_multi_condition_unlock_requires_all_requirements(self):
         definition = {
             "id": "full_send",

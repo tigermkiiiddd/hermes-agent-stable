@@ -508,6 +508,3 @@ class TestBundleContextBanner:
         self._setup_bundle(tmp_path)
         result = json.loads(skill_view("myplugin:foo"))
         assert "foo body." in result["content"]
-
-
-

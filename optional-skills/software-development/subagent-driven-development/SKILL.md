@@ -1,6 +1,6 @@
 ---
 name: subagent-driven-development
-description: "通过 delegate_task 子代理执行计划（2 阶段审查）"
+description: "Execute plans via delegate_task subagents (2-stage review)."
 version: 1.1.0
 author: Hermes Agent (adapted from obra/superpowers)
 license: MIT
@@ -8,7 +8,7 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [delegation, subagent, implementation, workflow, parallel]
-    related_skills: [plan, requesting-code-review, test-driven-development]
+    related_skills: [requesting-code-review, test-driven-development]
 ---
 
 # Subagent-Driven Development

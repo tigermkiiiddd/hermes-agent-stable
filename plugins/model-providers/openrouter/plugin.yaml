@@ -1,5 +1,5 @@
 name: openrouter-provider
 kind: model-provider
 version: 1.0.0
-description: "OpenRouter — 统一 API 访问多个模型提供商"
+description: OpenRouter aggregator
 author: Nous Research

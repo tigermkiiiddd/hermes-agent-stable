@@ -1,5 +1,5 @@
 name: qwen-oauth-provider
 kind: model-provider
 version: 1.0.0
-description: "Qwen 门户 — OAuth 认证接入"
+description: Qwen Portal (OAuth)
 author: Nous Research

@@ -1,6 +1,6 @@
 name: teams_pipeline
 version: 0.1.0
-description: "Microsoft Teams 会议流水线插件 — 持久运行时状态和操作员模式"
+description: "Microsoft Teams meeting pipeline plugin with durable runtime state and operator CLI flows for Graph-backed transcript-first meeting summaries."
 author: NousResearch
 kind: standalone
 platforms:
